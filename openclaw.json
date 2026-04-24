@@ -1,0 +1,24 @@
+{
+  "version": "1.0",
+  "port": 3000,
+  "database": {
+    "host": "${POSTGRES_HOST}",
+    "port": 5432,
+    "name": "${POSTGRES_DB}",
+    "user": "${POSTGRES_USER}",
+    "password": "${POSTGRES_PASSWORD}"
+  },
+  "agents": {
+    "strategist": { "enabled": true, "soul": "agents/strategist/SOUL.md" },
+    "content":    { "enabled": true, "soul": "agents/content/SOUL.md" },
+    "ads":        { "enabled": true, "soul": "agents/ads/SOUL.md" },
+    "tg-scout":   { "enabled": true, "soul": "agents/tg-scout/SOUL.md" },
+    "analytics":  { "enabled": true, "soul": "agents/analytics/SOUL.md" }
+  },
+  "telegram": {
+    "admin_chat_id": "${TELEGRAM_ADMIN_CHAT_ID}"
+  },
+  "budget": {
+    "monthly_limit_rub": "${MONTHLY_ADS_BUDGET_LIMIT_RUB}"
+  }
+}

@@ -1,0 +1,42 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.VPS_PATH }}
+            git pull origin main
+            docker compose pull
+            docker compose up -d --build
+            # Health check
+            sleep 10
+            curl -f http://localhost:8000/health || exit 1
+
+      - name: Notify Telegram — success
+        if: success()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}" \
+            -d text="✅ Deploy to production succeeded. Commit: ${{ github.sha }}"
+
+      - name: Notify Telegram — failure
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}" \
+            -d text="❌ Deploy FAILED. Commit: ${{ github.sha }}. Check GitHub Actions."
