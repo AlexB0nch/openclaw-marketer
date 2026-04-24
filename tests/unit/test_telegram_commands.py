@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from telegram import Update, Chat, Message, User
+from telegram import Chat, Message, Update, User
 
 from integrations.telegram.commands import (
     button_callback_approve,

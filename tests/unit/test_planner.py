@@ -4,7 +4,6 @@ from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
-import pytest_asyncio
 
 from integrations.strategist.models import (
     ContentPlan,
@@ -26,9 +25,7 @@ class TestCalculateWeeklyMetrics:
     @pytest.mark.asyncio
     async def test_calculate_metrics_no_data(self, db_session):
         """Test metrics calculation with no data."""
-        metrics = await calculate_weekly_metrics(
-            db_session, date(2026, 4, 27), date(2026, 5, 3)
-        )
+        metrics = await calculate_weekly_metrics(db_session, date(2026, 4, 27), date(2026, 5, 3))
 
         assert metrics.total_impressions == 0
         assert metrics.total_clicks == 0

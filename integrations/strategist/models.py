@@ -45,9 +45,7 @@ class ContentPlan(BaseModel):
     week_end_date: date
     products: list[ProductPlan]
     metrics_summary: WeeklyMetrics
-    status: Literal["pending_approval", "approved", "rejected", "archived"] = (
-        "pending_approval"
-    )
+    status: Literal["pending_approval", "approved", "rejected", "archived"] = "pending_approval"
     created_at: datetime
     approved_by_user: str | None = None
     approval_reason: str | None = None

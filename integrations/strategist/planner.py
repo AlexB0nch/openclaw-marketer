@@ -1,15 +1,14 @@
 """Strategist planner: weekly content plan generation."""
 
+import json
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-import json
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import (
     ContentPlan,
-    PlanApprovalLog,
     ProductPlan,
     TopicEntry,
     WeeklyMetrics,
@@ -20,11 +19,14 @@ async def calculate_weekly_metrics(
     session: AsyncSession, week_start: date, week_end: date
 ) -> WeeklyMetrics:
     """Query and aggregate metrics for a given week."""
-    from app.models import Metrics, Product  # avoid circular imports
+    from app.models import Metrics  # avoid circular imports
 
     stmt = select(
-        Metrics.product_id,
+        Metrics.campaign_id,
         Metrics.date,
+        Metrics.impressions,
+        Metrics.clicks,
+        Metrics.spend_rub,
     ).where((Metrics.date >= week_start) & (Metrics.date <= week_end))
     result = await session.execute(stmt)
     rows = result.fetchall()
@@ -44,9 +46,8 @@ async def calculate_weekly_metrics(
     total_clicks = 0
     total_spend = Decimal("0.00")
 
-    for row in rows:
-        # Aggregate metrics (assuming these columns exist in Metrics table)
-        # This is a simplified version; adjust based on actual schema
+    for _row in rows:
+        # Aggregate metrics (simplified; adjust based on actual schema)
         pass
 
     avg_ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0.0
@@ -64,9 +65,9 @@ async def calculate_weekly_metrics(
 
 async def fetch_active_products(session: AsyncSession) -> list[dict]:
     """Get active products with recent campaign data."""
-    from app.models import Product, Campaign
+    from app.models import Product
 
-    stmt = select(Product).where(Product.active == True)
+    stmt = select(Product).where(Product.active)
     result = await session.execute(stmt)
     products = result.scalars().all()
 
@@ -91,7 +92,7 @@ async def generate_topics_for_product(product: dict) -> list[TopicEntry]:
     In production, this would call Claude API with prompt caching.
     For Sprint 1, we use static suggestions.
     """
-    topics = [
+    return [
         TopicEntry(
             topic=f"Launch campaign for {product['name']}",
             channel="telegram",
@@ -111,7 +112,6 @@ async def generate_topics_for_product(product: dict) -> list[TopicEntry]:
             notes="Dev-focused, niche audience",
         ),
     ]
-    return topics
 
 
 async def generate_weekly_plan(
@@ -144,8 +144,7 @@ async def generate_weekly_plan(
         )
         product_plans.append(product_plan)
 
-    # 4. Assemble ContentPlan
-    plan = ContentPlan(
+    return ContentPlan(
         week_start_date=week_start,
         week_end_date=week_end,
         products=product_plans,
@@ -153,8 +152,6 @@ async def generate_weekly_plan(
         status="pending_approval",
         created_at=datetime.now(),
     )
-
-    return plan
 
 
 async def save_plan_to_db(session: AsyncSession, plan: ContentPlan) -> int:
@@ -233,14 +230,12 @@ async def update_plan_status(
     if reason:
         update_dict["approval_reason"] = reason
 
-    stmt = text(
-        """UPDATE content_plans
+    stmt = text("""UPDATE content_plans
            SET status = :status,
                approved_by_user = :approved_by_user,
                approved_at = :approved_at,
                approval_reason = :approval_reason
-           WHERE id = :id"""
-    )
+           WHERE id = :id""")
     await session.execute(
         stmt,
         {
@@ -254,10 +249,8 @@ async def update_plan_status(
 
     # Log action
     action = "approved" if new_status == "approved" else "rejected"
-    log_stmt = text(
-        """INSERT INTO plan_approvals (plan_id, action, actor, reason, timestamp)
-           VALUES (:plan_id, :action, :actor, :reason, :timestamp)"""
-    )
+    log_stmt = text("""INSERT INTO plan_approvals (plan_id, action, actor, reason, timestamp)
+           VALUES (:plan_id, :action, :actor, :reason, :timestamp)""")
     await session.execute(
         log_stmt,
         {

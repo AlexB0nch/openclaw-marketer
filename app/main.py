@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import create_async_engine
 from telegram import Bot
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler
 
 from app.config import Settings
 from integrations.scheduler import StrategistScheduler
@@ -61,9 +61,7 @@ async def startup() -> None:
     telegram_app.add_handler(
         CallbackQueryHandler(button_callback_approve, pattern=r"^approve_\d+$")
     )
-    telegram_app.add_handler(
-        CallbackQueryHandler(button_callback_reject, pattern=r"^reject_\d+$")
-    )
+    telegram_app.add_handler(CallbackQueryHandler(button_callback_reject, pattern=r"^reject_\d+$"))
 
     # Start polling in background
     await telegram_app.initialize()

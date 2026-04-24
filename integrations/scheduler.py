@@ -5,13 +5,12 @@ from datetime import date, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import Bot
 from telegram.error import TelegramError
 
 from app.config import Settings
 from integrations.strategist.planner import generate_weekly_plan, save_plan_to_db
-from integrations.telegram.publisher import send_digest_message
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +29,7 @@ class StrategistScheduler:
         # Task 1: Generate weekly plan (Sundays 19:00 MSK)
         self.scheduler.add_job(
             self.weekly_plan_task,
-            trigger=CronTrigger(
-                day_of_week=6, hour=19, minute=0, timezone="Europe/Moscow"
-            ),
+            trigger=CronTrigger(day_of_week=6, hour=19, minute=0, timezone="Europe/Moscow"),
             id="weekly_plan",
             name="Weekly Plan Generation",
         )
@@ -40,9 +37,7 @@ class StrategistScheduler:
         # Task 2: Send weekly digest (Sundays 19:05 MSK, 5 min after plan)
         self.scheduler.add_job(
             self.weekly_digest_task,
-            trigger=CronTrigger(
-                day_of_week=6, hour=19, minute=5, timezone="Europe/Moscow"
-            ),
+            trigger=CronTrigger(day_of_week=6, hour=19, minute=5, timezone="Europe/Moscow"),
             id="weekly_digest",
             name="Weekly Digest Sender",
         )

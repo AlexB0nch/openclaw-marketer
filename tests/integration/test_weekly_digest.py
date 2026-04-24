@@ -1,7 +1,7 @@
 """Integration tests for weekly digest and scheduler."""
 
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
@@ -23,7 +23,8 @@ class TestSchedulerTasks:
         assert scheduler is not None
         assert scheduler.scheduler is not None
 
-    def test_scheduler_has_jobs_configured(self, scheduler):
+    @pytest.mark.asyncio
+    async def test_scheduler_has_jobs_configured(self, scheduler):
         """Test scheduler has jobs configured."""
         scheduler.start()
         jobs = scheduler.scheduler.get_jobs()
@@ -37,9 +38,15 @@ class TestSchedulerTasks:
     @pytest.mark.asyncio
     async def test_format_plan_for_telegram(self, scheduler):
         """Test plan formatting for Telegram."""
-        from integrations.strategist.models import ContentPlan, ProductPlan, TopicEntry, WeeklyMetrics
         from datetime import datetime
         from decimal import Decimal
+
+        from integrations.strategist.models import (
+            ContentPlan,
+            ProductPlan,
+            TopicEntry,
+            WeeklyMetrics,
+        )
 
         metrics = WeeklyMetrics(
             week_start=date(2026, 4, 27),

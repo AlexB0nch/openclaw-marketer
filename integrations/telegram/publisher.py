@@ -1,7 +1,6 @@
 """Telegram message publisher for async sending."""
 
 import logging
-from typing import Optional
 
 from telegram import Bot
 
@@ -34,8 +33,7 @@ async def send_formatted_message(
             return True
         except Exception as e:
             logger.error(f"Attempt {attempt + 1}/{retry_count} failed: {e}")
-            if attempt == retry_count - 1:
-                return False
+    return False
 
 
 async def send_digest_message(bot: Bot, chat_id: int, digest_text: str) -> bool:
