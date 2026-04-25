@@ -14,7 +14,7 @@ aiosqlite==0.20.0
 pandas==2.2.2
 matplotlib==3.9.0
 google-ads==24.1.0
-tapi-yandex-direct==3.0.0
+tapi-yandex-direct==2021.5.29
 
 # dev / test
 pytest==8.2.0

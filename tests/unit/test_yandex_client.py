@@ -19,10 +19,7 @@ def _make_mock_api(return_data: dict) -> MagicMock:
     mock_result.return_value.data = return_data
 
     mock_resource = MagicMock()
-    mock_resource.get = MagicMock(return_value=mock_result)
-    mock_resource.add = MagicMock(return_value=mock_result)
-    mock_resource.suspend = MagicMock(return_value=mock_result)
-    mock_resource.resume = MagicMock(return_value=mock_result)
+    mock_resource.post = MagicMock(return_value=mock_result)
 
     mock_api = MagicMock()
     mock_api.campaigns = MagicMock(return_value=mock_resource)

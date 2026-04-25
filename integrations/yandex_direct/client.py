@@ -31,7 +31,7 @@ class YandexDirectClient:
 
         def _call() -> list[dict[str, Any]]:
             api = self._get_api()
-            result = api.campaigns().get(
+            result = api.campaigns().post(
                 data={
                     "method": "get",
                     "params": {
@@ -52,7 +52,7 @@ class YandexDirectClient:
 
         def _call() -> dict[str, Any]:
             api = self._get_api()
-            result = api.campaigns().get(
+            result = api.campaigns().post(
                 data={
                     "method": "get",
                     "params": {
@@ -78,7 +78,9 @@ class YandexDirectClient:
 
         def _call() -> int:
             api = self._get_api()
-            result = api.campaigns().add(data={"method": "add", "params": {"Campaigns": [config]}})
+            result = api.campaigns().post(
+                data={"method": "add", "params": {"Campaigns": [config]}}
+            )
             ids = result().data.get("result", {}).get("AddResults", [])
             if not ids or "Id" not in ids[0]:
                 raise YandexDirectError("No campaign ID returned")
@@ -99,10 +101,12 @@ class YandexDirectClient:
             kw_objects = [
                 {"Keyword": kw, "BidCeiling": {"value": 100, "currency": "RUB"}} for kw in keywords
             ]
-            result = api.keywords().add(
+            result = api.keywords().post(
                 data={
                     "method": "add",
-                    "params": {"Keywords": [{"AdGroupId": campaign_id, **kw} for kw in kw_objects]},
+                    "params": {
+                        "Keywords": [{"AdGroupId": campaign_id, **kw} for kw in kw_objects]
+                    },
                 }
             )
             return result().data
@@ -117,7 +121,7 @@ class YandexDirectClient:
 
         def _call() -> Any:
             api = self._get_api()
-            result = api.campaigns().suspend(
+            result = api.campaigns().post(
                 data={
                     "method": "suspend",
                     "params": {"SelectionCriteria": {"Ids": [campaign_id]}},
@@ -135,7 +139,7 @@ class YandexDirectClient:
 
         def _call() -> Any:
             api = self._get_api()
-            result = api.campaigns().resume(
+            result = api.campaigns().post(
                 data={
                     "method": "resume",
                     "params": {"SelectionCriteria": {"Ids": [campaign_id]}},
@@ -155,9 +159,8 @@ class YandexDirectClient:
 
         def _call() -> list[dict[str, Any]]:
             api = self._get_api()
-            result = api.reports().get(
+            result = api.reports().post(
                 data={
-                    "method": "get",
                     "params": {
                         "SelectionCriteria": {
                             "DateFrom": date_from.isoformat(),
@@ -169,7 +172,7 @@ class YandexDirectClient:
                         "Format": "TSV",
                         "IncludeVAT": "YES",
                         "IncludeDiscount": "NO",
-                    },
+                    }
                 }
             )
             return result().data
