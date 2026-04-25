@@ -1,0 +1,277 @@
+{
+  "name": "Ads Automation Pipeline",
+  "nodes": [
+    {
+      "id": "check_pending_drafts",
+      "name": "check_pending_drafts — Schedule (every 15 min)",
+      "type": "n8n-nodes-base.cron",
+      "position": [240, 300],
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 15,
+              "unit": "minutes"
+            }
+          ]
+        }
+      },
+      "notes": "Polls for ad campaign drafts that are ready for approval every 15 minutes."
+    },
+    {
+      "id": "send_approval_request",
+      "name": "send_approval_request — POST /ads/approval/send",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [460, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APP_BASE_URL}}/ads/approval/send",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "campaign_id",
+              "value": "={{$json.campaign_id}}"
+            }
+          ]
+        },
+        "responseFormat": "json"
+      },
+      "notes": [
+        "Endpoint: POST /ads/approval/send",
+        "Body: { campaign_id: int }",
+        "Sends Telegram message with approve/edit/reject buttons to admin chat.",
+        "Updates campaign status to 'pending_approval'.",
+        "Returns: { success: bool, campaign_id: int, message_id: int }"
+      ]
+    },
+    {
+      "id": "wait_for_approval",
+      "name": "wait_for_approval — Wait node",
+      "type": "n8n-nodes-base.wait",
+      "position": [680, 300],
+      "parameters": {
+        "resume": "webhook",
+        "webhookSuffix": "ads-approval",
+        "options": {
+          "webhookDescription": "Waits for admin to click approve/reject in Telegram"
+        }
+      },
+      "notes": [
+        "Pauses workflow execution until the admin clicks a button in Telegram.",
+        "The app backend calls the resume webhook after button callback is handled.",
+        "Timeout: 48 hours — if no action taken, workflow continues and logs timeout."
+      ]
+    },
+    {
+      "id": "check_approval_status",
+      "name": "Check approval status",
+      "type": "n8n-nodes-base.if",
+      "position": [900, 300],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.action}}",
+              "operation": "equal",
+              "value2": "approved"
+            }
+          ]
+        }
+      },
+      "notes": "true → launch campaign; false (rejected/edited) → notify admin and stop."
+    },
+    {
+      "id": "launch_campaign",
+      "name": "launch_campaign — POST /ads/launch",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1120, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APP_BASE_URL}}/ads/launch",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "campaign_id",
+              "value": "={{$json.campaign_id}}"
+            },
+            {
+              "name": "actor",
+              "value": "={{$json.actor}}"
+            }
+          ]
+        },
+        "responseFormat": "json"
+      },
+      "notes": [
+        "Endpoint: POST /ads/launch",
+        "Body: { campaign_id: int, actor: str }",
+        "Calls AdsApprovalManager.handle_approval_callback().",
+        "Creates campaign in Yandex Direct API and updates status to 'running'.",
+        "Returns: { success: bool, campaign_id: int, external_id: str }"
+      ]
+    },
+    {
+      "id": "notify_admin",
+      "name": "notify_admin — Telegram success notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1340, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "chat_id",
+              "value": "={{$env.TELEGRAM_ADMIN_CHAT_ID}}"
+            },
+            {
+              "name": "text",
+              "value": "✅ *Кампания запущена*\n\nID: {{$json.campaign_id}}\nВнешний ID: {{$json.external_id}}\nВремя: {{$now}}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "responseFormat": "json"
+      },
+      "notes": "Sends success notification to Telegram admin after campaign launch."
+    },
+    {
+      "id": "notify_rejected",
+      "name": "notify_rejected — Telegram rejection notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1120, 420],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "chat_id",
+              "value": "={{$env.TELEGRAM_ADMIN_CHAT_ID}}"
+            },
+            {
+              "name": "text",
+              "value": "❌ *Кампания отклонена*\n\nID: {{$json.campaign_id}}\nПричина: {{$json.reason}}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "responseFormat": "json"
+      },
+      "notes": "Sends notification when campaign is rejected or requires editing."
+    },
+    {
+      "id": "error_notify_admin",
+      "name": "error_notify_admin — Telegram error alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1340, 500],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "chat_id",
+              "value": "={{$env.TELEGRAM_ADMIN_CHAT_ID}}"
+            },
+            {
+              "name": "text",
+              "value": "⚠️ *Ошибка в Ads Pipeline*\n\nВремя: {{$now}}\nУзел: {{$node.name}}\nОшибка: {{$json.message}}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "responseFormat": "json"
+      },
+      "notes": [
+        "Fires on any unhandled error in the ads automation pipeline.",
+        "Sends alert directly to TELEGRAM_ADMIN_CHAT_ID via Bot API.",
+        "Check Yandex Direct API credentials and campaign config on repeated failures."
+      ]
+    }
+  ],
+  "connections": {
+    "check_pending_drafts — Schedule (every 15 min)": {
+      "main": [
+        [
+          {
+            "node": "send_approval_request — POST /ads/approval/send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "send_approval_request — POST /ads/approval/send": {
+      "main": [
+        [{ "node": "wait_for_approval — Wait node", "type": "main", "index": 0 }]
+      ]
+    },
+    "wait_for_approval — Wait node": {
+      "main": [
+        [{ "node": "Check approval status", "type": "main", "index": 0 }]
+      ]
+    },
+    "Check approval status": {
+      "main": [
+        [
+          {
+            "node": "launch_campaign — POST /ads/launch",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "notify_rejected — Telegram rejection notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "launch_campaign — POST /ads/launch": {
+      "main": [
+        [
+          {
+            "node": "notify_admin — Telegram success notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "errorWorkflow": "error_notify_admin",
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "error_notify_admin"
+  },
+  "meta": {
+    "description": "Ads Agent pipeline: polls for draft campaigns, sends Telegram approval requests, waits for human approval, launches approved campaigns in Yandex Direct, notifies admin.",
+    "endpoints": {
+      "POST /ads/approval/send": "Send campaign draft to Telegram for approval",
+      "POST /ads/launch": "Launch approved campaign in Yandex Direct",
+      "POST /ads/reject": "Mark campaign as rejected with reason"
+    },
+    "env_vars_required": [
+      "APP_BASE_URL",
+      "TELEGRAM_BOT_TOKEN",
+      "TELEGRAM_ADMIN_CHAT_ID",
+      "YANDEX_DIRECT_TOKEN",
+      "YANDEX_DIRECT_LOGIN"
+    ]
+  }
+}
