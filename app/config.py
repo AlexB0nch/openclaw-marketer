@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     # Telegram
     telegram_bot_token: str
     telegram_admin_chat_id: str
+    telegram_channel_id: str = ""  # Sprint 2: channel to publish content
 
     # PostgreSQL
     postgres_host: str = "localhost"
@@ -27,6 +28,20 @@ class Settings(BaseSettings):
 
     # Budget
     monthly_ads_budget_limit_rub: float = 100_000.0
+
+    # Yandex Direct (Sprint 3)
+    yandex_direct_token: str = ""
+    yandex_direct_login: str = ""
+
+    # Google Analytics / Ads (Sprint 3)
+    google_ads_developer_token: str = ""
+    google_ads_client_id: str = ""
+    google_ads_client_secret: str = ""
+    google_ads_refresh_token: str = ""
+    google_ads_customer_id: str = ""
+
+    # Analytics alert thresholds (Sprint 3)
+    daily_spend_alert_threshold_rub: float = 5_000.0
 
     @property
     def database_url(self) -> str:

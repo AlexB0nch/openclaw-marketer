@@ -1,0 +1,267 @@
+{
+  "name": "Content Pipeline",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "Cron — 3x daily (MSK)",
+      "type": "n8n-nodes-base.cron",
+      "position": [240, 300],
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyDay",
+              "hour": 6,
+              "minute": 0,
+              "comment": "09:00 MSK (UTC+3)"
+            },
+            {
+              "mode": "everyDay",
+              "hour": 9,
+              "minute": 0,
+              "comment": "12:00 MSK (UTC+3)"
+            },
+            {
+              "mode": "everyDay",
+              "hour": 15,
+              "minute": 0,
+              "comment": "18:00 MSK (UTC+3)"
+            }
+          ]
+        }
+      },
+      "notes": "Fires three times per day aligned to the Telegram publish slots (09:00 / 12:00 / 18:00 MSK, stored as UTC in cron)."
+    },
+    {
+      "id": "node1_check_calendar",
+      "name": "Node 1 — Check editorial calendar",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [460, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.APP_BASE_URL}}/api/v1/content/pending",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "target_date",
+              "value": "={{$today.format('yyyy-MM-dd')}}"
+            }
+          ]
+        },
+        "responseFormat": "json"
+      },
+      "notes": [
+        "Endpoint: GET /api/v1/content/pending?target_date=YYYY-MM-DD",
+        "Returns: { posts: ScheduledPost[], count: int }",
+        "Fetches all scheduled_posts with status IN ('pending','generated')",
+        "for today in MSK timezone.",
+        "If count == 0 the workflow ends here (no-op)."
+      ]
+    },
+    {
+      "id": "node1_exit_if_empty",
+      "name": "Exit if no posts",
+      "type": "n8n-nodes-base.if",
+      "position": [680, 300],
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.count}}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "notes": "Branch: true → continue to generate; false → workflow ends."
+    },
+    {
+      "id": "node1_split",
+      "name": "Split posts into items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [900, 300],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "notes": "Process each ScheduledPost individually so errors in one post do not block others."
+    },
+    {
+      "id": "node2_generate",
+      "name": "Node 2 — Generate content",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1120, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APP_BASE_URL}}/api/v1/content/{{$json.id}}/generate",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "product_description",
+              "value": ""
+            }
+          ]
+        },
+        "responseFormat": "json"
+      },
+      "notes": [
+        "Endpoint: POST /api/v1/content/{post_id}/generate",
+        "Body: { product_description: string }  (optional, enriches Claude prompt)",
+        "Returns: updated ScheduledPost with body filled and status='generated'",
+        "Skipped if post.status is already 'generated'.",
+        "The app uses ContentGenerator (Claude claude-sonnet-4-6) with token-bucket",
+        "rate limiting (0.5 req/s, burst=2)."
+      ]
+    },
+    {
+      "id": "node2_skip_if_generated",
+      "name": "Skip if already generated",
+      "type": "n8n-nodes-base.if",
+      "position": [1120, 400],
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.status}}",
+              "operation": "equal",
+              "value2": "pending"
+            }
+          ]
+        }
+      },
+      "notes": "true → call generate endpoint; false → post already has body, proceed to publish."
+    },
+    {
+      "id": "node3_publish",
+      "name": "Node 3 — Publish via Telegram publisher",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1340, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APP_BASE_URL}}/api/v1/content/{{$json.id}}/publish",
+        "responseFormat": "json"
+      },
+      "notes": [
+        "Endpoint: POST /api/v1/content/{post_id}/publish",
+        "Returns: { post_id, success: bool, telegram_message_id: int|null }",
+        "Internally calls publisher.publish_post() with 3-retry + exp backoff.",
+        "On success: CalendarManager.mark_published() records published_at + msg_id.",
+        "On failure: CalendarManager.mark_failed() + notify_publish_error() to admin.",
+        "Non-Telegram platforms (habr, vc.ru, linkedin) return success=true as stub."
+      ]
+    },
+    {
+      "id": "node4_metrics",
+      "name": "Node 4 — Save metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1560, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APP_BASE_URL}}/api/v1/content/{{$json.post_id}}/metrics",
+        "responseFormat": "json"
+      },
+      "notes": [
+        "Endpoint: POST /api/v1/content/{post_id}/metrics",
+        "Currently a stub (returns {status: ok}); full implementation in Sprint 3",
+        "(Analytics Agent). Will collect Telegram views, reactions, forwards."
+      ]
+    },
+    {
+      "id": "node5_error_alert",
+      "name": "Node 5 — Telegram error alert to admin",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1560, 440],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/sendMessage",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "chat_id",
+              "value": "={{$env.TELEGRAM_ADMIN_CHAT_ID}}"
+            },
+            {
+              "name": "text",
+              "value": "⚠️ Content pipeline error at {{$now}}\n\nNode: {{$node.name}}\nError: {{$json.message}}"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "responseFormat": "json"
+      },
+      "notes": [
+        "Fires on any unhandled error in nodes 1–4.",
+        "Sends alert directly to TELEGRAM_ADMIN_CHAT_ID via Bot API.",
+        "The app-side publisher also sends its own alert via notify_publish_error(),",
+        "so publish failures are double-reported for visibility."
+      ]
+    }
+  ],
+  "connections": {
+    "Cron — 3x daily (MSK)": {
+      "main": [
+        [{ "node": "Node 1 — Check editorial calendar", "type": "main", "index": 0 }]
+      ]
+    },
+    "Node 1 — Check editorial calendar": {
+      "main": [
+        [{ "node": "Exit if no posts", "type": "main", "index": 0 }]
+      ]
+    },
+    "Exit if no posts": {
+      "main": [
+        [{ "node": "Split posts into items", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Split posts into items": {
+      "main": [
+        [{ "node": "Skip if already generated", "type": "main", "index": 0 }]
+      ]
+    },
+    "Skip if already generated": {
+      "main": [
+        [{ "node": "Node 2 — Generate content", "type": "main", "index": 0 }],
+        [{ "node": "Node 3 — Publish via Telegram publisher", "type": "main", "index": 0 }]
+      ]
+    },
+    "Node 2 — Generate content": {
+      "main": [
+        [{ "node": "Node 3 — Publish via Telegram publisher", "type": "main", "index": 0 }]
+      ]
+    },
+    "Node 3 — Publish via Telegram publisher": {
+      "main": [
+        [{ "node": "Node 4 — Save metrics", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "errorWorkflow": "node5_error_alert",
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "node5_error_alert"
+  },
+  "meta": {
+    "description": "Content Agent pipeline: checks the editorial calendar 3x/day, generates post bodies via Claude API, publishes to Telegram channel, saves metrics.",
+    "endpoints": {
+      "GET /api/v1/content/pending": "Node 1 — fetch pending posts for today",
+      "POST /api/v1/content/{id}/generate": "Node 2 — fill post body via Claude API",
+      "POST /api/v1/content/{id}/publish": "Node 3 — publish to Telegram channel",
+      "POST /api/v1/content/{id}/metrics": "Node 4 — record post metrics (Sprint 3 stub)",
+      "POST /api/v1/content/habr-draft": "On-demand: generate long-form Habr article",
+      "GET /api/v1/content/habr-draft/{id}/export": "On-demand: export Habr draft as Markdown"
+    },
+    "env_vars_required": [
+      "APP_BASE_URL",
+      "TELEGRAM_BOT_TOKEN",
+      "TELEGRAM_ADMIN_CHAT_ID",
+      "TELEGRAM_CHANNEL_ID"
+    ]
+  }
+}

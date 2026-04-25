@@ -7,10 +7,16 @@ import os
 os.environ.setdefault("ANTHROPIC_API_KEY", "test_dummy")
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test_dummy")
 os.environ.setdefault("TELEGRAM_ADMIN_CHAT_ID", "0")
+os.environ.setdefault("TELEGRAM_CHANNEL_ID", "@test_channel")
 os.environ.setdefault("POSTGRES_USER", "test")
 os.environ.setdefault("POSTGRES_PASSWORD", "test")
 os.environ.setdefault("N8N_WEBHOOK_URL", "http://localhost:5678")
 os.environ.setdefault("N8N_API_KEY", "test_dummy")
+# Sprint 3 analytics (all optional — default empty string in Settings)
+os.environ.setdefault("YANDEX_DIRECT_TOKEN", "test_yd_token")
+os.environ.setdefault("YANDEX_DIRECT_LOGIN", "test_yd_login")
+os.environ.setdefault("GOOGLE_ADS_CUSTOMER_ID", "123456789")
+os.environ.setdefault("DAILY_SPEND_ALERT_THRESHOLD_RUB", "5000")
 
 from unittest.mock import AsyncMock, MagicMock  # noqa: E402
 
@@ -34,33 +40,132 @@ def event_loop():
 
 @pytest_asyncio.fixture
 async def test_db_engine():
-    """Create in-memory SQLite database for tests."""
+    """Create in-memory SQLite database for tests (Sprint 1 + Sprint 2 tables)."""
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         echo=False,
     )
 
     async with engine.begin() as conn:
-        await conn.execute(text("CREATE TABLE content_plans (id INTEGER PRIMARY KEY)"))
+        # ── Sprint 0 / 1 tables ──────────────────────────────────────────
+        await conn.execute(
+            text(
+                "CREATE TABLE products ("
+                "  id INTEGER PRIMARY KEY,"
+                "  name TEXT NOT NULL,"
+                "  description TEXT,"
+                "  url TEXT,"
+                "  active INTEGER NOT NULL DEFAULT 1,"
+                "  created_at TIMESTAMP,"
+                "  updated_at TIMESTAMP"
+                ")"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE TABLE campaigns ("
+                "  id INTEGER PRIMARY KEY,"
+                "  product_id INTEGER,"
+                "  name TEXT NOT NULL,"
+                "  platform TEXT NOT NULL,"
+                "  status TEXT NOT NULL DEFAULT 'draft'"
+                ")"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE TABLE metrics ("
+                "  id INTEGER PRIMARY KEY,"
+                "  campaign_id INTEGER NOT NULL,"
+                "  date TEXT NOT NULL,"
+                "  impressions INTEGER DEFAULT 0,"
+                "  clicks INTEGER DEFAULT 0,"
+                "  spend_rub REAL DEFAULT 0,"
+                "  conversions INTEGER DEFAULT 0"
+                ")"
+            )
+        )
+        # content_plans: use TEXT instead of JSONB (portable; no JSONB in unit tests)
+        await conn.execute(
+            text(
+                "CREATE TABLE content_plans ("
+                "  id INTEGER PRIMARY KEY,"
+                "  week_start_date TEXT,"
+                "  week_end_date TEXT,"
+                "  status TEXT NOT NULL DEFAULT 'pending_approval',"
+                "  plan_json TEXT NOT NULL DEFAULT '{}',"
+                "  created_by_agent TEXT NOT NULL DEFAULT 'strategist',"
+                "  created_at TIMESTAMP,"
+                "  approved_by_user TEXT,"
+                "  approval_reason TEXT,"
+                "  approved_at TIMESTAMP"
+                ")"
+            )
+        )
         await conn.execute(text("CREATE TABLE plan_approvals (id INTEGER PRIMARY KEY)"))
+
+        # ── Sprint 2 tables ──────────────────────────────────────────────
+        # scheduled_posts: no CHECK constraints (SQLite ignores them anyway,
+        # but omitting keeps DDL identical in spirit to Postgres without JSONB risk)
         await conn.execute(
             text(
-                "CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT NOT NULL, "
-                "description TEXT, url TEXT, active INTEGER NOT NULL DEFAULT 1, "
-                "created_at TIMESTAMP, updated_at TIMESTAMP)"
+                "CREATE TABLE scheduled_posts ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  content_plan_id INTEGER,"
+                "  product_id INTEGER NOT NULL,"
+                "  product_name TEXT NOT NULL DEFAULT '',"
+                "  platform TEXT NOT NULL,"
+                "  topic TEXT NOT NULL,"
+                "  body TEXT NOT NULL DEFAULT '',"
+                "  scheduled_at TEXT NOT NULL,"
+                "  status TEXT NOT NULL DEFAULT 'pending',"
+                "  published_at TEXT,"
+                "  telegram_message_id INTEGER,"
+                "  created_at TEXT DEFAULT (datetime('now'))"
+                ")"
             )
         )
         await conn.execute(
             text(
-                "CREATE TABLE campaigns (id INTEGER PRIMARY KEY, product_id INTEGER, "
-                "name TEXT NOT NULL, platform TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft')"
+                "CREATE TABLE habr_drafts ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  product_id INTEGER NOT NULL,"
+                "  product_name TEXT NOT NULL DEFAULT '',"
+                "  title TEXT NOT NULL,"
+                "  brief TEXT NOT NULL,"
+                "  body TEXT NOT NULL,"
+                "  word_count INTEGER NOT NULL DEFAULT 0,"
+                "  status TEXT NOT NULL DEFAULT 'draft',"
+                "  created_at TEXT DEFAULT (datetime('now'))"
+                ")"
             )
         )
+
+        # ── Sprint 3 tables ──────────────────────────────────────────────────
         await conn.execute(
             text(
-                "CREATE TABLE metrics (id INTEGER PRIMARY KEY, campaign_id INTEGER NOT NULL, "
-                "date TEXT NOT NULL, impressions INTEGER DEFAULT 0, clicks INTEGER DEFAULT 0, "
-                "spend_rub REAL DEFAULT 0)"
+                "CREATE TABLE post_metrics ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  post_id INTEGER,"
+                "  product_id INTEGER,"
+                "  date TEXT NOT NULL,"
+                "  views INTEGER NOT NULL DEFAULT 0,"
+                "  forwards INTEGER NOT NULL DEFAULT 0,"
+                "  reactions INTEGER NOT NULL DEFAULT 0,"
+                "  collected_at TEXT DEFAULT (datetime('now'))"
+                ")"
+            )
+        )
+        # analytics_snapshots: TEXT instead of JSONB (SQLite-portable)
+        await conn.execute(
+            text(
+                "CREATE TABLE analytics_snapshots ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  snapshot_date TEXT NOT NULL,"
+                "  product_id INTEGER,"
+                "  data TEXT NOT NULL,"
+                "  created_at TEXT DEFAULT (datetime('now'))"
+                ")"
             )
         )
 
@@ -82,6 +187,7 @@ def mock_telegram_bot():
     bot = AsyncMock(spec=Bot)
     bot.send_message = AsyncMock()
     bot.send_document = AsyncMock()
+    bot.send_photo = AsyncMock()
     return bot
 
 
@@ -92,6 +198,7 @@ def test_settings():
         anthropic_api_key="test_key",
         telegram_bot_token="test_token",
         telegram_admin_chat_id="12345",
+        telegram_channel_id="@test_channel",
         postgres_user="test",
         postgres_password="test",
         n8n_webhook_url="http://localhost:5678",

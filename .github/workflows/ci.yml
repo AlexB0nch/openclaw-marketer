@@ -71,3 +71,5 @@ jobs:
 
       - name: Run pytest
         run: pytest tests/ -v --asyncio-mode=auto --tb=short
+        env:
+          PYTHONPATH: .

@@ -6,6 +6,8 @@ from telegram import Bot
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler
 
 from app.config import Settings
+from integrations.analytics.scheduler import AnalyticsScheduler
+from integrations.content.router import router as content_router
 from integrations.scheduler import StrategistScheduler
 from integrations.telegram.commands import (
     button_callback_approve,
@@ -20,16 +22,18 @@ from integrations.telegram.commands import (
 logger = logging.getLogger(__name__)
 
 settings = Settings()
-app = FastAPI(title="AI Marketing Team", version="0.1.0")
+app = FastAPI(title="AI Marketing Team", version="0.2.0")
+app.include_router(content_router)
 
 scheduler: StrategistScheduler | None = None
+analytics_scheduler: AnalyticsScheduler | None = None
 telegram_app: Application | None = None
 
 
 @app.on_event("startup")
 async def startup() -> None:
     """Initialize scheduler and Telegram bot on startup."""
-    global scheduler, telegram_app
+    global scheduler, analytics_scheduler, telegram_app
 
     logger.info("Starting up AI Marketing Team application")
 
@@ -43,9 +47,13 @@ async def startup() -> None:
     # Initialize Telegram bot
     bot = Bot(token=settings.telegram_bot_token)
 
-    # Initialize scheduler
+    # Initialize Strategist scheduler
     scheduler = StrategistScheduler(settings, engine, bot)
     scheduler.start()
+
+    # Initialize Analytics scheduler
+    analytics_scheduler = AnalyticsScheduler(settings, engine, bot)
+    analytics_scheduler.start()
 
     # Initialize Telegram command handlers
     telegram_app = Application.builder().token(settings.telegram_bot_token).build()
@@ -71,12 +79,15 @@ async def startup() -> None:
 @app.on_event("shutdown")
 async def shutdown() -> None:
     """Clean up resources on shutdown."""
-    global scheduler, telegram_app
+    global scheduler, analytics_scheduler, telegram_app
 
     logger.info("Shutting down AI Marketing Team application")
 
     if scheduler:
         scheduler.shutdown()
+
+    if analytics_scheduler:
+        analytics_scheduler.shutdown()
 
     if telegram_app:
         await telegram_app.shutdown()
