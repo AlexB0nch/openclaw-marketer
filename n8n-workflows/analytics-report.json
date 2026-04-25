@@ -1,0 +1,193 @@
+{
+  "name": "Analytics Report Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 5 * * *"
+            }
+          ]
+        }
+      },
+      "name": "cron_trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "notes": "Fires at 08:30 MSK (UTC+3 = 05:30 UTC). Adjust TZ offset for DST."
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_BASE_URL }}/api/v1/analytics/collect",
+        "requestMethod": "POST",
+        "responseFormat": "json",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "collect_metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 300],
+      "notes": "POST /api/v1/analytics/collect — triggers all collectors for today. Returns {collected: int, errors: []}."
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_BASE_URL }}/api/v1/analytics/engine/snapshot",
+        "requestMethod": "POST",
+        "responseFormat": "json",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "run_engine",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [680, 300],
+      "notes": "POST /api/v1/analytics/engine/snapshot — runs top_performing_posts, cost_per_lead, channel_effectiveness, trend_analysis and saves to analytics_snapshots. Returns {snapshot_id: int}."
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_BASE_URL }}/api/v1/analytics/anomalies",
+        "requestMethod": "POST",
+        "responseFormat": "json",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "name": "check_anomalies",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [900, 300],
+      "notes": "POST /api/v1/analytics/anomalies — runs AnomalyDetector.check() and fires Telegram alerts if any found. Returns {anomalies_count: int, alerts_sent: bool}."
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_BASE_URL }}/api/v1/analytics/digest",
+        "requestMethod": "POST",
+        "responseFormat": "json",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "send_digest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1120, 300],
+      "notes": "POST /api/v1/analytics/digest — generates MorningDigest and sends to TELEGRAM_ADMIN_CHAT_ID. Returns {sent: true, message_length: int}."
+    },
+    {
+      "parameters": {
+        "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "requestMethod": "POST",
+        "responseFormat": "json",
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "chat_id",
+              "value": "={{ $env.TELEGRAM_ADMIN_CHAT_ID }}"
+            },
+            {
+              "name": "text",
+              "value": "🔴 *Analytics pipeline failed*\\nStep: {{ $node[\"collect_metrics\"].name }}\\nError: {{ $json[\"error\"] }}\\nTime: {{ $now.toISO() }}",
+              "parseMode": "Markdown"
+            }
+          ]
+        }
+      },
+      "name": "on_error_alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [680, 500],
+      "notes": "Direct Telegram Bot API call on any pipeline error. Bypasses the app layer for reliability. Sends to TELEGRAM_ADMIN_CHAT_ID."
+    }
+  ],
+  "connections": {
+    "cron_trigger": {
+      "main": [
+        [
+          {
+            "node": "collect_metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "collect_metrics": {
+      "main": [
+        [
+          {
+            "node": "run_engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "run_engine": {
+      "main": [
+        [
+          {
+            "node": "check_anomalies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_anomalies": {
+      "main": [
+        [
+          {
+            "node": "send_digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromAList"
+  },
+  "meta": {
+    "description": "Daily analytics pipeline: collect metrics → run engine → check anomalies → send morning digest. Runs at 08:30 MSK daily.",
+    "endpoints": [
+      {
+        "node": "collect_metrics",
+        "method": "POST",
+        "path": "/api/v1/analytics/collect",
+        "request_body": "{}",
+        "response": "{\"collected\": 42, \"errors\": []}"
+      },
+      {
+        "node": "run_engine",
+        "method": "POST",
+        "path": "/api/v1/analytics/engine/snapshot",
+        "request_body": "{}",
+        "response": "{\"snapshot_id\": 7}"
+      },
+      {
+        "node": "check_anomalies",
+        "method": "POST",
+        "path": "/api/v1/analytics/anomalies",
+        "request_body": "{}",
+        "response": "{\"anomalies_count\": 0, \"alerts_sent\": false}"
+      },
+      {
+        "node": "send_digest",
+        "method": "POST",
+        "path": "/api/v1/analytics/digest",
+        "request_body": "{}",
+        "response": "{\"sent\": true, \"message_length\": 842}"
+      }
+    ]
+  }
+}
