@@ -169,6 +169,67 @@ async def test_db_engine():
             )
         )
 
+        # ── Sprint 4 tables ──────────────────────────────────────────────────
+        await conn.execute(
+            text(
+                "CREATE TABLE ad_campaigns ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  product_id INTEGER,"
+                "  platform TEXT NOT NULL DEFAULT 'yandex',"
+                "  status TEXT NOT NULL DEFAULT 'draft',"
+                "  config_json TEXT NOT NULL DEFAULT '{}',"
+                "  campaign_id_external TEXT,"
+                "  budget_rub REAL NOT NULL DEFAULT 0.0,"
+                "  spent_rub REAL NOT NULL DEFAULT 0.0,"
+                "  created_at TEXT DEFAULT (datetime('now')),"
+                "  launched_at TEXT,"
+                "  completed_at TEXT"
+                ")"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE TABLE ad_variants ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  campaign_id INTEGER NOT NULL,"
+                "  title1 TEXT NOT NULL,"
+                "  title2 TEXT NOT NULL,"
+                "  text TEXT NOT NULL,"
+                "  display_url TEXT NOT NULL,"
+                "  final_url TEXT NOT NULL,"
+                "  clicks INTEGER NOT NULL DEFAULT 0,"
+                "  impressions INTEGER NOT NULL DEFAULT 0,"
+                "  ctr REAL NOT NULL DEFAULT 0.0,"
+                "  status TEXT NOT NULL DEFAULT 'active'"
+                ")"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE TABLE ad_approvals ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  campaign_id INTEGER NOT NULL,"
+                "  action TEXT NOT NULL,"
+                "  actor TEXT NOT NULL,"
+                "  reason TEXT,"
+                "  timestamp TEXT DEFAULT (datetime('now'))"
+                ")"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE TABLE ad_daily_spend ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  campaign_id INTEGER NOT NULL,"
+                "  date TEXT NOT NULL,"
+                "  spend_rub REAL NOT NULL DEFAULT 0.0,"
+                "  clicks INTEGER NOT NULL DEFAULT 0,"
+                "  impressions INTEGER NOT NULL DEFAULT 0,"
+                "  ctr REAL NOT NULL DEFAULT 0.0"
+                ")"
+            )
+        )
+
     return engine
 
 

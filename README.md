@@ -427,6 +427,105 @@ asyncio.run(main())
 
 ---
 
+## Sprint 4 — Рекламный агент (Ads Agent)
+
+### Что делает Рекламный агент
+
+Создаёт, запускает и оптимизирует рекламные кампании в Яндекс.Директ:
+1. **Создаёт черновики кампаний** — генерирует ключевые слова и варианты объявлений через Claude API
+2. **Отправляет на одобрение** — Telegram-сообщение с кнопками ✅ Запустить / ✏️ Редактировать / ❌ Отклонить
+3. **Запускает кампании** — только после явного одобрения человека через Yandex Direct API
+4. **A/B-тестирование** — оценивает варианты через 7 дней, останавливает проигравшие
+5. **Мониторинг бюджета** — каждый час, авто-пауза при достижении месячного лимита (100 000 ₽)
+6. **Еженедельный отчёт** — каждый понедельник 08:00 МСК с метриками и CTR
+
+### Применение миграции Sprint 4
+
+```bash
+docker exec -i $(docker-compose ps -q postgres) \
+  psql -U $POSTGRES_USER -d $POSTGRES_DB \
+  < db/migrations/005_sprint4_ads.sql
+```
+
+Добавляет: `ad_campaigns`, `ad_variants`, `ad_approvals`, `ad_daily_spend`.
+
+### Продукты
+
+| ID | Название | Описание |
+|----|----------|----------|
+| 1 | AI Ассистент | Персональный AI-помощник для бизнеса |
+| 2 | AI Тренер | Платформа обучения с AI-наставником |
+| 3 | AI Агрегатор новостей | Автоагрегация и суммаризация новостей |
+
+### Workflow одобрения
+
+```
+Создание черновика (status=draft)
+↓
+POST /ads/approval/send → Telegram с кнопками
+↓
+Ожидание нажатия кнопки (status=pending_approval)
+↓
+✅ Одобрено → Yandex Direct API → status=running
+❌ Отклонено → status=rejected, причина логируется
+✏️ Редактировать → status остаётся draft
+```
+
+### Новая переменная окружения (Sprint 4)
+
+```dotenv
+# Yandex Wordstat (опционально, для предложения ключевых слов)
+YANDEX_WORDSTAT_TOKEN=
+```
+
+### Расписание задач (Ads APScheduler)
+
+| ID задачи | Расписание | Действие |
+|-----------|-----------|----------|
+| `ads_ab_test_check` | Ежедн. 07:00 МСК | Оценка A/B-тестов, пауза проигравших |
+| `ads_budget_check` | Каждый час | Проверка дневного/месячного лимита |
+| `ads_weekly_report` | Пн 08:00 МСК | Отчёт по расходам и CTR |
+
+### A/B-тестирование
+
+- Минимум 2 варианта объявлений на кампанию
+- Оценка через 7 дней при >= 100 показов на вариант
+- Победитель: максимальный CTR
+- Проигравшие варианты останавливаются автоматически
+
+### n8n Workflow
+
+Файл: [`n8n-workflows/ads-automation.json`](n8n-workflows/ads-automation.json)
+
+| Шаг | n8n Node | Действие |
+|-----|----------|----------|
+| 1 | check_pending_drafts | Опрос черновиков каждые 15 минут |
+| 2 | send_approval_request | `POST /ads/approval/send` |
+| 3 | wait_for_approval | Ожидание нажатия кнопки в Telegram |
+| 4 | launch_campaign | `POST /ads/launch` |
+| 5 | notify_admin | Telegram-уведомление об успехе |
+| error | error_notify_admin | Telegram-алерт при ошибке |
+
+### Схема базы данных (Sprint 4)
+
+[`db/migrations/005_sprint4_ads.sql`](db/migrations/005_sprint4_ads.sql) добавляет:
+
+**`ad_campaigns`** — рекламные кампании:
+
+| Колонка | Тип | Описание |
+|---------|-----|----------|
+| `platform` | TEXT | `yandex` или `youtube` |
+| `status` | TEXT | `draft` → `pending_approval` → `running` / `paused` / `rejected` |
+| `config_json` | JSONB | Полный конфиг (ключевые слова, объявления, стратегия) |
+| `campaign_id_external` | TEXT | ID кампании в Яндекс.Директ |
+| `budget_rub` | NUMERIC | Месячный бюджет |
+
+**`ad_variants`** — варианты объявлений для A/B-тестов.  
+**`ad_approvals`** — журнал одобрений/отклонений.  
+**`ad_daily_spend`** — ежедневная статистика расходов.
+
+---
+
 ## Запуск тестов
 
 ```bash
@@ -448,7 +547,8 @@ pytest tests/ --cov=integrations --cov-report=term-missing
 
 **Результат Sprint 1:** 25 тестов, 0 ошибок.  
 **Результат Sprint 2:** добавлено 40+ тестов (generator, calendar, publisher, pipeline).  
-**Результат Sprint 3:** добавлено 35+ тестов (collector, engine, digest, pipeline).
+**Результат Sprint 3:** добавлено 35+ тестов (collector, engine, digest, pipeline).  
+**Результат Sprint 4:** добавлено 9 тестов (approval, budget_monitor, ab_test, pipeline).
 
 ---
 
