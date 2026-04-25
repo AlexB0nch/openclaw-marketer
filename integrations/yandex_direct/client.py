@@ -78,9 +78,7 @@ class YandexDirectClient:
 
         def _call() -> int:
             api = self._get_api()
-            result = api.campaigns().post(
-                data={"method": "add", "params": {"Campaigns": [config]}}
-            )
+            result = api.campaigns().post(data={"method": "add", "params": {"Campaigns": [config]}})
             ids = result().data.get("result", {}).get("AddResults", [])
             if not ids or "Id" not in ids[0]:
                 raise YandexDirectError("No campaign ID returned")
@@ -104,9 +102,7 @@ class YandexDirectClient:
             result = api.keywords().post(
                 data={
                     "method": "add",
-                    "params": {
-                        "Keywords": [{"AdGroupId": campaign_id, **kw} for kw in kw_objects]
-                    },
+                    "params": {"Keywords": [{"AdGroupId": campaign_id, **kw} for kw in kw_objects]},
                 }
             )
             return result().data
