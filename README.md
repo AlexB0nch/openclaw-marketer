@@ -526,6 +526,92 @@ YANDEX_WORDSTAT_TOKEN=
 
 ---
 
+## Sprint 5 — TG Scout Agent
+
+### Что делает TG Scout
+
+Каждый понедельник в 09:00 МСК агент:
+1. **Ищет каналы** — Telethon сканирует публичные Telegram-каналы по ключевым словам трёх продуктов
+2. **Обогащает метриками** — TGStat API добавляет точный ER, рост аудитории, категорию (если `TGSTAT_API_KEY` задан)
+3. **Оценивает релевантность** — RelevanceScorer выставляет баллы 0–100 по четырём компонентам
+4. **Генерирует питчи** — PitchGenerator через Claude API создаёт три версии питча на русском
+5. **Отправляет дайджест** — топ-10 каналов в Telegram-чат администратора с кнопками одобрения
+6. **Мониторит упоминания** — непрерывно слушает публичные каналы на упоминания продуктов
+
+**Важно:** питч никогда не отправляется без явного нажатия ✅ администратором.
+
+### Применение миграции Sprint 5
+
+```bash
+docker exec -i $(docker-compose ps -q postgres) \
+  psql -U $POSTGRES_USER -d $POSTGRES_DB \
+  < db/migrations/006_sprint5_tg_scout.sql
+```
+
+Добавляет: `tg_channels`, `tg_channel_scores`, `tg_pitch_drafts`, `tg_channel_outreach`, `tg_mention_log`.
+
+### Новые переменные окружения
+
+```dotenv
+# Telethon (Telegram user session — не бот!)
+TELETHON_API_ID=           # App ID из my.telegram.org
+TELETHON_API_HASH=         # App Hash из my.telegram.org
+TELETHON_SESSION_PATH=./data/telethon.session  # путь к сессии (только на VPS!)
+
+# TGStat API (опционально)
+TGSTAT_API_KEY=            # если пусто — обогащение пропускается
+
+# Мониторинг упоминаний
+MONITOR_KEYWORDS=AI помощник,ИИ тренер,агрегатор новостей
+```
+
+⚠️ **Никогда не коммитьте `*.session` файлы** — они добавлены в `.gitignore`.
+
+### HTTP API (Scout)
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| `POST` | `/api/v1/scout/search` | Поиск каналов по ключевым словам |
+| `POST` | `/api/v1/scout/enrich` | Обогащение списка через TGStat |
+| `POST` | `/api/v1/scout/score` | Скоринг каналов для продукта |
+| `POST` | `/api/v1/scout/pitches/generate` | Генерация питчей |
+| `POST` | `/api/v1/scout/digest/send` | Отправка дайджеста администратору |
+| `GET`  | `/api/v1/scout/channels` | Список каналов с оценками |
+
+### Scoring Formula
+
+| Компонент | Диапазон | Описание |
+|---|---|---|
+| `size_score` | 0–25 | Log10-шкала: 0 при <1K, 25 при >100K подписчиков |
+| `er_score` | 0–25 | 0 при ER<1%, 25 при ER≥10% |
+| `topic_score` | 0–25 | Совпадение ключевых слов продукта |
+| `semantic_score` | 0–25 | Оценка Claude Haiku по описанию |
+
+### Карточка дайджеста
+
+```
+📢 @channel_name
+👥 12 500 подписчиков | ER: 8.2% | Score: 87/100
+Тема: AI, продуктивность
+📝 Питч: Привет! Видел ваш канал про AI...
+[✅ Отправить питч] [👀 Показать полный] [❌ Пропустить]
+```
+
+### n8n Workflow
+
+Файл: [`n8n-workflows/tg-scout-pipeline.json`](n8n-workflows/tg-scout-pipeline.json)
+
+Запускается по cron каждый понедельник 09:00, выполняет полный пайплайн через HTTP API.
+
+### Расписание задач (Scout APScheduler)
+
+| ID задачи | Расписание | Действие |
+|-----------|-----------|----------|
+| `scout_weekly_search` | Пн 09:00 МСК | Полный пайплайн: поиск → скоринг → питч → дайджест |
+| `scout_mention_monitor` | При старте (фон) | Мониторинг упоминаний продуктов в реальном времени |
+
+---
+
 ## Запуск тестов
 
 ```bash
@@ -549,6 +635,7 @@ pytest tests/ --cov=integrations --cov-report=term-missing
 **Результат Sprint 2:** добавлено 40+ тестов (generator, calendar, publisher, pipeline).  
 **Результат Sprint 3:** добавлено 35+ тестов (collector, engine, digest, pipeline).  
 **Результат Sprint 4:** добавлено 9 тестов (approval, budget_monitor, ab_test, pipeline).
+**Результат Sprint 5:** добавлено 35+ тестов (scout, tgstat, monitor, scorer, pitch, outreach, router, pipeline).
 
 ---
 
