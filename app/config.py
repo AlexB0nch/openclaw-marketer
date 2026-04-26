@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # Analytics alert thresholds (Sprint 3)
     daily_spend_alert_threshold_rub: float = 5_000.0
 
+    # Events Agent (Sprint 6)
+    events_enabled: bool = False
+
     @property
     def database_url(self) -> str:
         return (

@@ -10,6 +10,8 @@ from integrations.ads.approval import AdsApprovalManager
 from integrations.ads.scheduler import AdsScheduler
 from integrations.analytics.scheduler import AnalyticsScheduler
 from integrations.content.router import router as content_router
+from integrations.events.events_router import router as events_router
+from integrations.events.events_scheduler import EventsScheduler
 from integrations.scheduler import StrategistScheduler
 from integrations.telegram.commands import (
     button_callback_approve,
@@ -31,6 +33,7 @@ app.include_router(content_router)
 scheduler: StrategistScheduler | None = None
 analytics_scheduler: AnalyticsScheduler | None = None
 ads_scheduler: AdsScheduler | None = None
+events_scheduler: EventsScheduler | None = None
 telegram_app: Application | None = None
 _db_engine = None
 
@@ -108,13 +111,80 @@ async def _ads_reject_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         )
 
 
+# ── Events Agent Telegram callback handlers ───────────────────────────────────
+
+
+async def _events_draft_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle events_draft:<event_id> inline button callback."""
+    query = update.callback_query
+    await query.answer()
+    if query.data is None:
+        return
+    try:
+        from integrations.events.digest import DigestBuilder
+
+        builder = DigestBuilder()
+        async with AsyncSession(_db_engine) as session:
+            await builder.handle_draft_callback(session, query.get_bot(), query.data)
+    except Exception as exc:
+        logger.error("Events draft callback failed: %s", exc)
+        await query.edit_message_text(f"\u274c Ошибка при генерации черновика: {exc}")
+
+
+async def _events_skip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle events_skip:<event_id> inline button callback."""
+    query = update.callback_query
+    await query.answer()
+    if query.data is None:
+        return
+    try:
+        from integrations.events.digest import DigestBuilder
+
+        builder = DigestBuilder()
+        async with AsyncSession(_db_engine) as session:
+            await builder.handle_skip_callback(session, query.data)
+        await query.edit_message_text("\u274c Событие пропущено.")
+    except Exception as exc:
+        logger.error("Events skip callback failed: %s", exc)
+
+
+async def _events_apply_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle events_apply:<event_id> inline button callback."""
+    query = update.callback_query
+    await query.answer()
+    if query.data is None:
+        return
+    try:
+        from integrations.events.digest import DigestBuilder
+
+        builder = DigestBuilder()
+        async with AsyncSession(_db_engine) as session:
+            await builder.handle_apply_callback(
+                session, query.get_bot(), query.data, settings.telegram_admin_chat_id
+            )
+    except Exception as exc:
+        logger.error("Events apply callback failed: %s", exc)
+        await query.edit_message_text(f"\u274c Ошибка: {exc}")
+
+
+async def _events_reject_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle events_reject:<event_id> inline button callback."""
+    query = update.callback_query
+    await query.answer()
+    if query.data is None:
+        return
+    event_id = int(query.data.split(":")[1])
+    await query.edit_message_text(f"\u274c Заявка для события #{event_id} отклонена.")
+    logger.info("Events application rejected for event %d", event_id)
+
+
 # ── Application lifecycle ─────────────────────────────────────────────────────
 
 
 @app.on_event("startup")
 async def startup() -> None:
     """Initialize scheduler and Telegram bot on startup."""
-    global scheduler, analytics_scheduler, ads_scheduler, telegram_app, _db_engine
+    global scheduler, analytics_scheduler, ads_scheduler, events_scheduler, telegram_app, _db_engine
 
     logger.info("Starting up AI Marketing Team application")
 
@@ -139,6 +209,13 @@ async def startup() -> None:
     # Initialize Ads scheduler
     ads_scheduler = AdsScheduler(settings, _db_engine, bot)
     ads_scheduler.start()
+
+    # Initialize Events scheduler (Sprint 6)
+    if settings.events_enabled:
+        events_scheduler = EventsScheduler(settings, _db_engine, bot)
+        events_scheduler.start()
+        app.include_router(events_router)
+        logger.info("Events Agent enabled and started")
 
     # Initialize Telegram command handlers
     telegram_app = Application.builder().token(settings.telegram_bot_token).build()
@@ -165,6 +242,20 @@ async def startup() -> None:
         CallbackQueryHandler(_ads_reject_callback, pattern=r"^ads_reject:\d+$")
     )
 
+    # Add Events Agent callback handlers
+    telegram_app.add_handler(
+        CallbackQueryHandler(_events_draft_callback, pattern=r"^events_draft:\d+$")
+    )
+    telegram_app.add_handler(
+        CallbackQueryHandler(_events_skip_callback, pattern=r"^events_skip:\d+$")
+    )
+    telegram_app.add_handler(
+        CallbackQueryHandler(_events_apply_callback, pattern=r"^events_apply:\d+$")
+    )
+    telegram_app.add_handler(
+        CallbackQueryHandler(_events_reject_callback, pattern=r"^events_reject:\d+$")
+    )
+
     # Start polling in background
     await telegram_app.initialize()
     logger.info("Application startup complete")
@@ -185,6 +276,9 @@ async def shutdown() -> None:
 
     if ads_scheduler:
         ads_scheduler.shutdown()
+
+    if events_scheduler:
+        events_scheduler.shutdown()
 
     if telegram_app:
         await telegram_app.shutdown()
