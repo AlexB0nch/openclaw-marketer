@@ -34,20 +34,22 @@ class TGStatClient:
 
         url = f"{_TGSTAT_BASE}?token={self._api_key}&channelId=@{username}"
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    if resp.status != 200:
-                        logger.warning("TGStat returned %d for @%s", resp.status, username)
-                        return None
-                    data = await resp.json()
-                    item = data.get("response", {})
-                    return TGStatChannelData(
-                        subscriber_count=item.get("participants_count", 0),
-                        avg_views_per_post=float(item.get("avg_post_reach", 0)),
-                        er=float(item.get("err24", 0)) / 100,
-                        category=item.get("category", ""),
-                        growth_7d=item.get("members_grow_7d", 0),
-                    )
+            async with (
+                aiohttp.ClientSession() as session,
+                session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp,
+            ):
+                if resp.status != 200:
+                    logger.warning("TGStat returned %d for @%s", resp.status, username)
+                    return None
+                data = await resp.json()
+                item = data.get("response", {})
+                return TGStatChannelData(
+                    subscriber_count=item.get("participants_count", 0),
+                    avg_views_per_post=float(item.get("avg_post_reach", 0)),
+                    er=float(item.get("err24", 0)) / 100,
+                    category=item.get("category", ""),
+                    growth_7d=item.get("members_grow_7d", 0),
+                )
         except Exception as exc:
             logger.warning("TGStat request failed for @%s: %s", username, exc)
             return None

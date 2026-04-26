@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class MentionMonitor:
     def __init__(
         self,
-        telethon_client: "TelegramClient",
+        telethon_client: TelegramClient,
         keywords: list[str],
         admin_chat_id: int,
     ) -> None:
@@ -78,11 +78,7 @@ class MentionMonitor:
         msg_id: int = event.message.id
         preview = message_text[:200] + ("…" if len(message_text) > 200 else "")
 
-        alert = (
-            f"🔔 Упоминание: \"{keyword}\"\n"
-            f"📢 Канал: @{channel_username}\n"
-            f"💬 {preview}"
-        )
+        alert = f'🔔 Упоминание: "{keyword}"\n' f"📢 Канал: @{channel_username}\n" f"💬 {preview}"
 
         keyboard = InlineKeyboardMarkup(
             [

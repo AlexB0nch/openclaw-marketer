@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import math
 import logging
+import math
 
 import anthropic
 from pydantic import BaseModel
@@ -127,20 +127,13 @@ class RelevanceScorer:
             breakdown=breakdown,
         )
 
-    async def batch_score(
-        self, channels: list[ChannelInfo], product: str
-    ) -> list[RelevanceScore]:
+    async def batch_score(self, channels: list[ChannelInfo], product: str) -> list[RelevanceScore]:
         """Score all channels concurrently."""
-        return list(
-            await asyncio.gather(*[self.score_channel(ch, product) for ch in channels])
-        )
+        return list(await asyncio.gather(*[self.score_channel(ch, product) for ch in channels]))
 
-    async def save_scores(
-        self, session: AsyncSession, scores: list[RelevanceScore]
-    ) -> None:
+    async def save_scores(self, session: AsyncSession, scores: list[RelevanceScore]) -> None:
         """Upsert scores into tg_channel_scores table."""
-        sql = text(
-            """
+        sql = text("""
             INSERT INTO tg_channel_scores (channel_id, product, score, breakdown, scored_at)
             SELECT id, :product, :score, :breakdown, NOW()
             FROM tg_channels WHERE username = :username
@@ -148,8 +141,7 @@ class RelevanceScorer:
               score=EXCLUDED.score,
               breakdown=EXCLUDED.breakdown,
               scored_at=NOW()
-            """
-        )
+            """)
         for score in scores:
             await session.execute(
                 sql,

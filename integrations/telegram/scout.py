@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-import re
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -37,7 +37,7 @@ class TelegramScout:
         self._client: TelegramClient = TelegramClient(session_path, api_id, api_hash)
 
     @property
-    def client(self) -> "TelegramClient":
+    def client(self) -> TelegramClient:
         return self._client
 
     async def search_channels(
@@ -86,7 +86,10 @@ class TelegramScout:
                     if er < min_er:
                         continue
 
-                    desc = getattr(full_chat.full_chat if "full_chat" in dir() else chat, "about", "") or ""
+                    desc = (
+                        getattr(full_chat.full_chat if "full_chat" in dir() else chat, "about", "")
+                        or ""
+                    )
                     contact_user, contact_email = self.parse_contact(desc)
 
                     info = ChannelInfo(
@@ -110,7 +113,7 @@ class TelegramScout:
     @staticmethod
     def parse_contact(description: str) -> tuple[str | None, str | None]:
         """Extract first @username and first email from bio text."""
-        username_match = re.search(r"@([A-Za-z0-9_]{3,32})", description)
+        username_match = re.search(r"(?<!\w)@([A-Za-z0-9_]{3,32})", description)
         email_match = re.search(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", description)
         username = username_match.group(1) if username_match else None
         email = email_match.group(0) if email_match else None
@@ -121,8 +124,7 @@ class TelegramScout:
         if not channels:
             return
 
-        sql = text(
-            """
+        sql = text("""
             INSERT INTO tg_channels (
                 username, title, subscriber_count, avg_views, er, description,
                 contact_username, contact_email, topics, source, status,
@@ -139,8 +141,7 @@ class TelegramScout:
                 er = EXCLUDED.er,
                 description = EXCLUDED.description,
                 updated_at = NOW()
-            """
-        )
+            """)
 
         for ch in channels:
             await session.execute(

@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import logging
+from typing import Annotated
 
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from telegram import Bot
 
 from app.config import Settings
-from integrations.telegram.outreach import ChannelWithPitch, OutreachManager
+from integrations.telegram.outreach import OutreachManager
 from integrations.telegram.pitch import PitchDraft, PitchGenerator
 from integrations.telegram.scorer import RelevanceScore, RelevanceScorer
 from integrations.telegram.scout import ChannelInfo, TelegramScout
@@ -28,6 +30,9 @@ _anthropic_client = anthropic.AsyncAnthropic(api_key=_settings.anthropic_api_key
 async def get_db():
     async with AsyncSession(_engine) as session:
         yield session
+
+
+DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 
 # ── Request / Response models ─────────────────────────────────────────────────
@@ -90,7 +95,7 @@ class ChannelResponse(BaseModel):
 @router.post("/search", response_model=SearchResponse)
 async def search_channels(
     request: SearchRequest,
-    session: AsyncSession = Depends(get_db),
+    session: DbDep,
 ) -> SearchResponse:
     scout = TelegramScout(
         api_id=_settings.telethon_api_id,
@@ -105,7 +110,7 @@ async def search_channels(
         return SearchResponse(channels=channels, count=len(channels))
     except Exception as exc:
         logger.error("search_channels failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/enrich", response_model=EnrichResponse)
@@ -118,7 +123,7 @@ async def enrich_channels(request: EnrichRequest) -> EnrichResponse:
 @router.post("/score", response_model=ScoreResponse)
 async def score_channels(
     request: ScoreRequest,
-    session: AsyncSession = Depends(get_db),
+    session: DbDep,
 ) -> ScoreResponse:
     scorer = RelevanceScorer(_anthropic_client)
     scores = await scorer.batch_score(request.channels, request.product)
@@ -129,14 +134,12 @@ async def score_channels(
 @router.post("/pitches/generate", response_model=GenerateResponse)
 async def generate_pitches(
     request: GenerateRequest,
-    session: AsyncSession = Depends(get_db),
+    session: DbDep,
 ) -> GenerateResponse:
     if len(request.channels) != len(request.scores):
-        raise HTTPException(
-            status_code=400, detail="channels and scores lists must be same length"
-        )
+        raise HTTPException(status_code=400, detail="channels and scores lists must be same length")
     pitcher = PitchGenerator(_anthropic_client)
-    pairs = list(zip(request.channels, request.scores))
+    pairs = list(zip(request.channels, request.scores, strict=False))
     drafts = await pitcher.batch_generate(pairs, request.product)
     for draft in drafts:
         await pitcher.save_draft(session, draft)
@@ -144,9 +147,7 @@ async def generate_pitches(
 
 
 @router.post("/digest/send")
-async def send_digest(session: AsyncSession = Depends(get_db)) -> dict[str, str]:
-    from telegram import Bot
-
+async def send_digest(session: DbDep) -> dict[str, str]:
     bot = Bot(token=_settings.telegram_bot_token)
     outreach = OutreachManager(_settings)
     try:
@@ -154,17 +155,16 @@ async def send_digest(session: AsyncSession = Depends(get_db)) -> dict[str, str]
         return {"status": "ok"}
     except Exception as exc:
         logger.error("send_digest failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/channels", response_model=list[ChannelResponse])
 async def list_channels(
-    session: AsyncSession = Depends(get_db),
+    session: DbDep,
 ) -> list[ChannelResponse]:
     import json
 
-    sql = text(
-        """
+    sql = text("""
         SELECT c.username, c.title, c.subscriber_count, c.er,
                c.status, c.topics,
                MAX(cs.score) AS score
@@ -173,8 +173,7 @@ async def list_channels(
         GROUP BY c.id, c.username, c.title, c.subscriber_count, c.er, c.status, c.topics
         ORDER BY score DESC NULLS LAST
         LIMIT 100
-        """
-    )
+        """)
     result = await session.execute(sql)
     rows = result.mappings().all()
 

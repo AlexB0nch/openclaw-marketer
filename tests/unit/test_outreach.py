@@ -44,7 +44,9 @@ def _make_pitch(username: str = "testchan") -> PitchDraft:
 
 
 def _make_cwp(username: str = "testchan", score: int = 80) -> ChannelWithPitch:
-    return ChannelWithPitch(channel=_make_channel(username), pitch=_make_pitch(username), score=score)
+    return ChannelWithPitch(
+        channel=_make_channel(username), pitch=_make_pitch(username), score=score
+    )
 
 
 def _build_mock_row(username: str, score: int = 80) -> MagicMock:

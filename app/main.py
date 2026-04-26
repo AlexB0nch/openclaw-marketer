@@ -11,7 +11,6 @@ from integrations.ads.scheduler import AdsScheduler
 from integrations.analytics.scheduler import AnalyticsScheduler
 from integrations.content.router import router as content_router
 from integrations.scheduler import StrategistScheduler
-from integrations.telegram.scout_router import router as scout_router
 from integrations.telegram.commands import (
     button_callback_approve,
     button_callback_reject,
@@ -21,6 +20,7 @@ from integrations.telegram.commands import (
     cmd_report,
     cmd_status,
 )
+from integrations.telegram.scout_router import router as scout_router
 from integrations.yandex_direct.client import YandexDirectClient
 
 logger = logging.getLogger(__name__)
@@ -146,6 +146,7 @@ async def startup() -> None:
     # Initialize TG Scout scheduler (Telethon client is lazy — only connects when needed)
     if settings.telethon_api_id:
         from telethon import TelegramClient
+
         from integrations.telegram.scout_scheduler import ScoutScheduler
 
         telethon_client = TelegramClient(

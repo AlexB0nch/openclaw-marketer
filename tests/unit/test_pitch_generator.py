@@ -7,23 +7,23 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from integrations.telegram.pitch import PitchDraft, PitchGenerator
-from integrations.telegram.scout import ChannelInfo
 from integrations.telegram.scorer import RelevanceScore
+from integrations.telegram.scout import ChannelInfo
 
 
 def _make_channel(**kwargs) -> ChannelInfo:
-    defaults = dict(
-        username="testchan",
-        title="Test Channel",
-        subscriber_count=10_000,
-        avg_views=500.0,
-        er=0.05,
-        description="AI tools for teams",
-        contact_username=None,
-        contact_email=None,
-        topics=["ai", "b2b"],
-        source="telethon",
-    )
+    defaults = {
+        "username": "testchan",
+        "title": "Test Channel",
+        "subscriber_count": 10_000,
+        "avg_views": 500.0,
+        "er": 0.05,
+        "description": "AI tools for teams",
+        "contact_username": None,
+        "contact_email": None,
+        "topics": ["ai", "b2b"],
+        "source": "telethon",
+    }
     defaults.update(kwargs)
     return ChannelInfo(**defaults)
 
@@ -37,7 +37,11 @@ def _make_score(channel_username: str = "testchan", score: int = 75) -> Relevanc
     )
 
 
-def _make_generator(short_text: str = "Короткий питч", medium_text: str = "Средний питч", long_text: str = "Длинный питч") -> PitchGenerator:
+def _make_generator(
+    short_text: str = "Короткий питч",
+    medium_text: str = "Средний питч",
+    long_text: str = "Длинный питч",
+) -> PitchGenerator:
     content_short = MagicMock(text=short_text)
     content_medium = MagicMock(text=medium_text)
     content_long = MagicMock(text=long_text)
@@ -160,14 +164,12 @@ async def test_batch_generate_returns_correct_count():
     client = MagicMock()
     client.messages = MagicMock()
     # 2 channels × 3 calls each = 6 responses
-    client.messages.create = AsyncMock(
-        side_effect=[_make_resp(f"text{i}") for i in range(6)]
-    )
+    client.messages.create = AsyncMock(side_effect=[_make_resp(f"text{i}") for i in range(6)])
     gen = PitchGenerator(anthropic_client=client)
 
     channels = [_make_channel(username=f"ch{i}") for i in range(2)]
     scores = [_make_score(f"ch{i}") for i in range(2)]
-    drafts = await gen.batch_generate(list(zip(channels, scores)), "ai_assistant")
+    drafts = await gen.batch_generate(list(zip(channels, scores, strict=False)), "ai_assistant")
 
     assert len(drafts) == 2
     assert all(isinstance(d, PitchDraft) for d in drafts)
@@ -200,6 +202,6 @@ async def test_batch_generate_respects_semaphore():
 
     channels = [_make_channel(username=f"ch{i}") for i in range(10)]
     scores = [_make_score(f"ch{i}") for i in range(10)]
-    await gen.batch_generate(list(zip(channels, scores)), "ai_assistant")
+    await gen.batch_generate(list(zip(channels, scores, strict=False)), "ai_assistant")
 
     assert max_concurrent <= 5

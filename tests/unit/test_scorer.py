@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from integrations.telegram.scorer import RelevanceScore, RelevanceScorer
 from integrations.telegram.scout import ChannelInfo
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -175,6 +174,7 @@ async def test_save_scores_calls_db() -> None:
 
     session = MagicMock()
     session.execute = AsyncMock()
+    session.commit = AsyncMock()
 
     scores = [
         RelevanceScore(

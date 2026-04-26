@@ -30,8 +30,7 @@ class OutreachManager:
         self, session: AsyncSession, top_n: int = 10
     ) -> list[ChannelWithPitch]:
         """Fetch top-N channels by score with their latest pending pitch drafts."""
-        sql = text(
-            """
+        sql = text("""
             SELECT
                 c.username, c.title, c.subscriber_count, c.avg_views, c.er,
                 c.description, c.contact_username, c.contact_email,
@@ -45,8 +44,7 @@ class OutreachManager:
             WHERE pd.status = 'pending_approval'
             ORDER BY cs.score DESC
             LIMIT :top_n
-            """
-        )
+            """)
         result = await session.execute(sql, {"top_n": top_n})
         rows = result.mappings().all()
 
@@ -144,14 +142,12 @@ class OutreachManager:
 
         # Check idempotency
         check = await session.execute(
-            text(
-                """
+            text("""
                 SELECT id FROM tg_channel_outreach
                 WHERE channel_id = (SELECT id FROM tg_channels WHERE username = :username)
                 AND action = 'sent'
                 LIMIT 1
-                """
-            ),
+                """),
             {"username": channel_username},
         )
         if check.fetchone():
@@ -160,15 +156,13 @@ class OutreachManager:
 
         # Load pitch
         row = await session.execute(
-            text(
-                """
+            text("""
                 SELECT pd.pitch_short, c.contact_username
                 FROM tg_pitch_drafts pd
                 JOIN tg_channels c ON c.id = pd.channel_id
                 WHERE c.username = :username AND pd.status = 'pending_approval'
                 ORDER BY pd.created_at DESC LIMIT 1
-                """
-            ),
+                """),
             {"username": channel_username},
         )
         data = row.mappings().fetchone()
@@ -185,36 +179,30 @@ class OutreachManager:
             logger.error("Failed to send DM to @%s: %s", contact, exc)
 
         await session.execute(
-            text(
-                """
+            text("""
                 INSERT INTO tg_channel_outreach (channel_id, product, action, actor, result, timestamp)
                 SELECT c.id, pd.product, 'sent', 'bot', :result, NOW()
                 FROM tg_channels c
                 JOIN tg_pitch_drafts pd ON pd.channel_id = c.id
                 WHERE c.username = :username
                 ORDER BY pd.created_at DESC LIMIT 1
-                """
-            ),
+                """),
             {"username": channel_username, "result": result},
         )
         await session.commit()
         logger.info("Outreach logged for @%s: %s", channel_username, result)
 
-    async def handle_show_callback(
-        self, session: AsyncSession, bot, callback_data: str
-    ) -> None:
+    async def handle_show_callback(self, session: AsyncSession, bot, callback_data: str) -> None:
         """Reply with pitch_medium text."""
         channel_username = callback_data.split(":", 1)[1]
         row = await session.execute(
-            text(
-                """
+            text("""
                 SELECT pd.pitch_medium
                 FROM tg_pitch_drafts pd
                 JOIN tg_channels c ON c.id = pd.channel_id
                 WHERE c.username = :username
                 ORDER BY pd.created_at DESC LIMIT 1
-                """
-            ),
+                """),
             {"username": channel_username},
         )
         data = row.mappings().fetchone()
@@ -227,37 +215,29 @@ class OutreachManager:
         )
 
         await session.execute(
-            text(
-                """
+            text("""
                 INSERT INTO tg_channel_outreach (channel_id, action, actor, result, timestamp)
                 SELECT id, 'shown', 'bot', 'ok', NOW()
                 FROM tg_channels WHERE username = :username
-                """
-            ),
+                """),
             {"username": channel_username},
         )
         await session.commit()
 
-    async def handle_skip_callback(
-        self, session: AsyncSession, callback_data: str
-    ) -> None:
+    async def handle_skip_callback(self, session: AsyncSession, callback_data: str) -> None:
         """Mark channel as skipped_this_week."""
         channel_username = callback_data.split(":", 1)[1]
 
         await session.execute(
-            text(
-                "UPDATE tg_channels SET status = 'skipped_this_week' WHERE username = :username"
-            ),
+            text("UPDATE tg_channels SET status = 'skipped_this_week' WHERE username = :username"),
             {"username": channel_username},
         )
         await session.execute(
-            text(
-                """
+            text("""
                 INSERT INTO tg_channel_outreach (channel_id, action, actor, result, timestamp)
                 SELECT id, 'skipped', 'bot', 'ok', NOW()
                 FROM tg_channels WHERE username = :username
-                """
-            ),
+                """),
             {"username": channel_username},
         )
         await session.commit()

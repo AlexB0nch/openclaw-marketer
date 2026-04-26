@@ -42,9 +42,7 @@ class ScoutScheduler:
         """Register weekly scout job and start mention monitor."""
         self.scheduler.add_job(
             self.run_weekly_scout,
-            trigger=CronTrigger(
-                day_of_week=0, hour=9, minute=0, timezone="Europe/Moscow"
-            ),
+            trigger=CronTrigger(day_of_week=0, hour=9, minute=0, timezone="Europe/Moscow"),
             id="scout_weekly_search",
             name="TG Scout Weekly Search",
         )
@@ -76,7 +74,7 @@ class ScoutScheduler:
                     scores = await scorer.batch_score(channels, product)
                     await scorer.save_scores(session, scores)
 
-                    pairs = list(zip(channels, scores))
+                    pairs = list(zip(channels, scores, strict=False))
                     drafts = await pitcher.batch_generate(pairs, product)
                     for draft in drafts:
                         await pitcher.save_draft(session, draft)

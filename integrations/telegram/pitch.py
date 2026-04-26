@@ -10,8 +10,8 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from integrations.telegram.scout import ChannelInfo
 from integrations.telegram.scorer import RelevanceScore
+from integrations.telegram.scout import ChannelInfo
 
 logger = logging.getLogger(__name__)
 
@@ -126,16 +126,14 @@ class PitchGenerator:
 
     async def save_draft(self, session: AsyncSession, draft: PitchDraft) -> None:
         """Insert pitch draft into tg_pitch_drafts table."""
-        sql = text(
-            """
+        sql = text("""
             INSERT INTO tg_pitch_drafts
               (channel_id, product, pitch_short, pitch_medium, pitch_long, status, created_at)
             SELECT id, :product, :pitch_short, :pitch_medium, :pitch_long,
                    'pending_approval', NOW()
             FROM tg_channels WHERE username = :username
             ON CONFLICT DO NOTHING
-            """
-        )
+            """)
         await session.execute(
             sql,
             {

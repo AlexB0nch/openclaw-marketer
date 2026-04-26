@@ -9,10 +9,9 @@ import pytest
 from integrations.telegram.monitor import MentionMonitor
 from integrations.telegram.outreach import ChannelWithPitch, OutreachManager
 from integrations.telegram.pitch import PitchDraft, PitchGenerator
-from integrations.telegram.scout import ChannelInfo, TelegramScout
 from integrations.telegram.scorer import RelevanceScore, RelevanceScorer
+from integrations.telegram.scout import ChannelInfo, TelegramScout
 from integrations.telegram.tgstat_client import TGStatClient
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -54,7 +53,11 @@ def _draft(username: str = "chan") -> PitchDraft:
 
 def _mock_session() -> AsyncMock:
     session = AsyncMock()
-    session.execute = AsyncMock(return_value=MagicMock(mappings=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))))
+    session.execute = AsyncMock(
+        return_value=MagicMock(
+            mappings=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
+        )
+    )
     session.commit = AsyncMock()
     return session
 
@@ -130,14 +133,12 @@ async def test_generate_pitches_batch():
     mock_anthropic = MagicMock()
     mock_anthropic.messages = MagicMock()
     # 2 channels × 3 Claude calls each = 6
-    mock_anthropic.messages.create = AsyncMock(
-        side_effect=[_resp(f"text{i}") for i in range(6)]
-    )
+    mock_anthropic.messages.create = AsyncMock(side_effect=[_resp(f"text{i}") for i in range(6)])
 
     pitcher = PitchGenerator(mock_anthropic)
     channels = [_channel("c1"), _channel("c2")]
     scores = [_score("c1"), _score("c2")]
-    drafts = await pitcher.batch_generate(list(zip(channels, scores)), "ai_assistant")
+    drafts = await pitcher.batch_generate(list(zip(channels, scores, strict=False)), "ai_assistant")
 
     assert len(drafts) == 2
     assert all(d.status == "pending_approval" for d in drafts)

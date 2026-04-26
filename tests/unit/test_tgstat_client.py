@@ -11,18 +11,18 @@ from integrations.telegram.tgstat_client import TGStatChannelData, TGStatClient
 
 
 def _make_channel(**kwargs) -> ChannelInfo:
-    defaults = dict(
-        username="testchan",
-        title="Test",
-        subscriber_count=5000,
-        avg_views=250.0,
-        er=0.05,
-        description="",
-        contact_username=None,
-        contact_email=None,
-        topics=["tech"],
-        source="telethon",
-    )
+    defaults = {
+        "username": "testchan",
+        "title": "Test",
+        "subscriber_count": 5000,
+        "avg_views": 250.0,
+        "er": 0.05,
+        "description": "",
+        "contact_username": None,
+        "contact_email": None,
+        "topics": ["tech"],
+        "source": "telethon",
+    }
     defaults.update(kwargs)
     return ChannelInfo(**defaults)
 
@@ -80,10 +80,12 @@ async def test_get_channel_info_success():
     mock_session.__aexit__ = AsyncMock(return_value=False)
     mock_session.get = MagicMock(return_value=mock_resp)
 
-    with patch("aiohttp.ClientSession", return_value=mock_session):
-        with patch("asyncio.sleep", new=AsyncMock()):
-            client = TGStatClient(api_key="testkey")
-            result = await client.get_channel_info("testchan")
+    with (
+        patch("aiohttp.ClientSession", return_value=mock_session),
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        client = TGStatClient(api_key="testkey")
+        result = await client.get_channel_info("testchan")
 
     assert result is not None
     assert result.subscriber_count == 12000
@@ -105,20 +107,24 @@ async def test_get_channel_info_returns_none_on_500():
     mock_session.__aexit__ = AsyncMock(return_value=False)
     mock_session.get = MagicMock(return_value=mock_resp)
 
-    with patch("aiohttp.ClientSession", return_value=mock_session):
-        with patch("asyncio.sleep", new=AsyncMock()):
-            client = TGStatClient(api_key="testkey")
-            result = await client.get_channel_info("testchan")
+    with (
+        patch("aiohttp.ClientSession", return_value=mock_session),
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        client = TGStatClient(api_key="testkey")
+        result = await client.get_channel_info("testchan")
 
     assert result is None
 
 
 @pytest.mark.asyncio
 async def test_get_channel_info_returns_none_on_exception():
-    with patch("aiohttp.ClientSession", side_effect=Exception("network error")):
-        with patch("asyncio.sleep", new=AsyncMock()):
-            client = TGStatClient(api_key="testkey")
-            result = await client.get_channel_info("testchan")
+    with (
+        patch("aiohttp.ClientSession", side_effect=Exception("network error")),
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        client = TGStatClient(api_key="testkey")
+        result = await client.get_channel_info("testchan")
 
     assert result is None
 

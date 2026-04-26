@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -103,7 +103,9 @@ async def test_on_mention_sends_correct_format():
     bot.send_message = AsyncMock()
 
     event = _make_event(msg_id=55, text="Использую AI помощник каждый день")
-    await monitor.on_mention(event, "AI помощник", "Использую AI помощник каждый день", "mychan", bot)
+    await monitor.on_mention(
+        event, "AI помощник", "Использую AI помощник каждый день", "mychan", bot
+    )
 
     bot.send_message.assert_awaited_once()
     call_kwargs = bot.send_message.call_args[1]

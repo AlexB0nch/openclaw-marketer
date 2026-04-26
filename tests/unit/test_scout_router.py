@@ -7,45 +7,47 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from integrations.telegram.pitch import PitchDraft
-from integrations.telegram.scout import ChannelInfo
 from integrations.telegram.scorer import RelevanceScore
+from integrations.telegram.scout import ChannelInfo
 
 
 def _make_channel(username: str = "testchan") -> dict:
-    return dict(
-        username=username,
-        title="Test",
-        subscriber_count=10000,
-        avg_views=500.0,
-        er=0.05,
-        description="desc",
-        contact_username=None,
-        contact_email=None,
-        topics=["tech"],
-        source="telethon",
-    )
+    return {
+        "username": username,
+        "title": "Test",
+        "subscriber_count": 10000,
+        "avg_views": 500.0,
+        "er": 0.05,
+        "description": "desc",
+        "contact_username": None,
+        "contact_email": None,
+        "topics": ["tech"],
+        "source": "telethon",
+    }
 
 
 def _make_score(username: str = "testchan") -> dict:
-    return dict(
-        channel_username=username,
-        product="ai_assistant",
-        score=75,
-        breakdown={"size_score": 20, "er_score": 20, "topic_score": 20, "semantic_score": 15},
-    )
+    return {
+        "channel_username": username,
+        "product": "ai_assistant",
+        "score": 75,
+        "breakdown": {"size_score": 20, "er_score": 20, "topic_score": 20, "semantic_score": 15},
+    }
 
 
 @pytest.fixture()
 def client():
     """TestClient with all external deps mocked."""
     from fastapi import FastAPI
+
     from integrations.telegram.scout_router import router
 
     # Patch heavy deps at module level before mounting
-    with patch("integrations.telegram.scout_router._settings") as mock_settings, \
-         patch("integrations.telegram.scout_router._engine"), \
-         patch("integrations.telegram.scout_router._anthropic_client"):
+    with (
+        patch("integrations.telegram.scout_router._settings") as mock_settings,
+        patch("integrations.telegram.scout_router._engine"),
+        patch("integrations.telegram.scout_router._anthropic_client"),
+    ):
 
         mock_settings.telegram_bot_token = "token"
         mock_settings.telegram_admin_chat_id = "123"
@@ -162,8 +164,10 @@ def test_list_channels_returns_json(client):
 
 
 def test_send_digest_triggers_outreach(client):
-    with patch("integrations.telegram.scout_router.OutreachManager") as MockOM, \
-         patch("integrations.telegram.scout_router.Bot"):
+    with (
+        patch("integrations.telegram.scout_router.OutreachManager") as MockOM,
+        patch("integrations.telegram.scout_router.Bot"),
+    ):
         instance = MagicMock()
         instance.send_weekly_digest = AsyncMock()
         MockOM.return_value = instance
