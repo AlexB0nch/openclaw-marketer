@@ -24,7 +24,15 @@ router = APIRouter(prefix="/api/v1/scout", tags=["tg-scout"])
 
 _settings = Settings()
 _engine = create_async_engine(_settings.database_url, echo=False, pool_pre_ping=True)
-_anthropic_client = anthropic.AsyncAnthropic(api_key=_settings.anthropic_api_key)
+
+_anthropic_client: anthropic.AsyncAnthropic | None = None
+
+
+def get_anthropic_client() -> anthropic.AsyncAnthropic:
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = anthropic.AsyncAnthropic(api_key=_settings.anthropic_api_key)
+    return _anthropic_client
 
 
 async def get_db():
@@ -125,7 +133,7 @@ async def score_channels(
     request: ScoreRequest,
     session: DbDep,
 ) -> ScoreResponse:
-    scorer = RelevanceScorer(_anthropic_client)
+    scorer = RelevanceScorer(get_anthropic_client())
     scores = await scorer.batch_score(request.channels, request.product)
     await scorer.save_scores(session, scores)
     return ScoreResponse(scores=scores, count=len(scores))
@@ -138,7 +146,7 @@ async def generate_pitches(
 ) -> GenerateResponse:
     if len(request.channels) != len(request.scores):
         raise HTTPException(status_code=400, detail="channels and scores lists must be same length")
-    pitcher = PitchGenerator(_anthropic_client)
+    pitcher = PitchGenerator(get_anthropic_client())
     pairs = list(zip(request.channels, request.scores, strict=False))
     drafts = await pitcher.batch_generate(pairs, request.product)
     for draft in drafts:

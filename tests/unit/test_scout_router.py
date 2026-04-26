@@ -46,7 +46,7 @@ def client():
     with (
         patch("integrations.telegram.scout_router._settings") as mock_settings,
         patch("integrations.telegram.scout_router._engine"),
-        patch("integrations.telegram.scout_router._anthropic_client"),
+        patch("integrations.telegram.scout_router.get_anthropic_client"),
     ):
 
         mock_settings.telegram_bot_token = "token"
