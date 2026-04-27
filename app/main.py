@@ -22,18 +22,24 @@ from integrations.telegram.commands import (
     cmd_report,
     cmd_status,
 )
+from integrations.telegram.scout_router import router as scout_router
 from integrations.yandex_direct.client import YandexDirectClient
 
 logger = logging.getLogger(__name__)
 
 settings = Settings()
-app = FastAPI(title="AI Marketing Team", version="0.2.0")
+app = FastAPI(title="AI Marketing Team", version="0.3.0")
 app.include_router(content_router)
+app.include_router(scout_router)
 
 scheduler: StrategistScheduler | None = None
 analytics_scheduler: AnalyticsScheduler | None = None
 ads_scheduler: AdsScheduler | None = None
+<<<<<<< HEAD
 events_scheduler: EventsScheduler | None = None
+=======
+scout_scheduler = None
+>>>>>>> origin/main
 telegram_app: Application | None = None
 _db_engine = None
 
@@ -184,7 +190,11 @@ async def _events_reject_callback(update: Update, context: ContextTypes.DEFAULT_
 @app.on_event("startup")
 async def startup() -> None:
     """Initialize scheduler and Telegram bot on startup."""
+<<<<<<< HEAD
     global scheduler, analytics_scheduler, ads_scheduler, events_scheduler, telegram_app, _db_engine
+=======
+    global scheduler, analytics_scheduler, ads_scheduler, scout_scheduler, telegram_app, _db_engine
+>>>>>>> origin/main
 
     logger.info("Starting up AI Marketing Team application")
 
@@ -210,12 +220,28 @@ async def startup() -> None:
     ads_scheduler = AdsScheduler(settings, _db_engine, bot)
     ads_scheduler.start()
 
+<<<<<<< HEAD
     # Initialize Events scheduler (Sprint 6)
     if settings.events_enabled:
         events_scheduler = EventsScheduler(settings, _db_engine, bot)
         events_scheduler.start()
         app.include_router(events_router)
         logger.info("Events Agent enabled and started")
+=======
+    # Initialize TG Scout scheduler (Telethon client is lazy — only connects when needed)
+    if settings.telethon_api_id:
+        from telethon import TelegramClient
+
+        from integrations.telegram.scout_scheduler import ScoutScheduler
+
+        telethon_client = TelegramClient(
+            settings.telethon_session_path,
+            settings.telethon_api_id,
+            settings.telethon_api_hash,
+        )
+        scout_scheduler = ScoutScheduler(settings, _db_engine, bot, telethon_client)
+        scout_scheduler.start()
+>>>>>>> origin/main
 
     # Initialize Telegram command handlers
     telegram_app = Application.builder().token(settings.telegram_bot_token).build()
@@ -264,7 +290,7 @@ async def startup() -> None:
 @app.on_event("shutdown")
 async def shutdown() -> None:
     """Clean up resources on shutdown."""
-    global scheduler, analytics_scheduler, ads_scheduler, telegram_app
+    global scheduler, analytics_scheduler, ads_scheduler, scout_scheduler, telegram_app
 
     logger.info("Shutting down AI Marketing Team application")
 
@@ -277,8 +303,13 @@ async def shutdown() -> None:
     if ads_scheduler:
         ads_scheduler.shutdown()
 
+<<<<<<< HEAD
     if events_scheduler:
         events_scheduler.shutdown()
+=======
+    if scout_scheduler:
+        scout_scheduler.shutdown()
+>>>>>>> origin/main
 
     if telegram_app:
         await telegram_app.shutdown()

@@ -66,3 +66,8 @@ logs/
 
 # n8n exports (keep only committed workflows)
 n8n-workflows/*.bak
+
+# Telethon session files — NEVER commit (Sprint 5)
+*.session
+*.session-journal
+data/

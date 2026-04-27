@@ -1,0 +1,240 @@
+{
+  "name": "TG Scout Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "cron_monday_9am",
+      "name": "Every Monday 09:00 MSK",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://app:8000/api/v1/scout/search",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "keywords",
+              "value": "=[\"AI помощник\",\"переписка\",\"email автоматизация\",\"B2B инструменты\",\"спорт\",\"тренировки\",\"фитнес\",\"новости\",\"дайджест\",\"агрегатор\",\"IT новости\",\"технологии\"]"
+            },
+            {
+              "name": "min_subscribers",
+              "value": "=1000"
+            },
+            {
+              "name": "min_er",
+              "value": "=0.01"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "trigger_scout_search",
+      "name": "Search Channels",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://app:8000/api/v1/scout/enrich",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "channels",
+              "value": "={{ $json.channels }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "enrich_tgstat",
+      "name": "Enrich with TGStat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://app:8000/api/v1/scout/score",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "channels",
+              "value": "={{ $json.channels }}"
+            },
+            {
+              "name": "product",
+              "value": "ai_assistant"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "score_channels",
+      "name": "Score Channels",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://app:8000/api/v1/scout/pitches/generate",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "channels",
+              "value": "={{ $('Enrich with TGStat').item.json.channels }}"
+            },
+            {
+              "name": "scores",
+              "value": "={{ $json.scores }}"
+            },
+            {
+              "name": "product",
+              "value": "ai_assistant"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "generate_pitches",
+      "name": "Generate Pitches",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://app:8000/api/v1/scout/digest/send",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "send_digest",
+      "name": "Send Digest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equals",
+              "value2": "ok"
+            }
+          ]
+        }
+      },
+      "id": "check_success",
+      "name": "Check Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://app:8000/api/v1/scout/digest/send",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message",
+              "value": "=❌ TG Scout Pipeline ERROR: {{ $json.error || 'Unknown error' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify_admin_error",
+      "name": "Notify Admin (Error)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 460]
+    }
+  ],
+  "connections": {
+    "Every Monday 09:00 MSK": {
+      "main": [
+        [{"node": "Search Channels", "type": "main", "index": 0}]
+      ]
+    },
+    "Search Channels": {
+      "main": [
+        [{"node": "Enrich with TGStat", "type": "main", "index": 0}]
+      ]
+    },
+    "Enrich with TGStat": {
+      "main": [
+        [{"node": "Score Channels", "type": "main", "index": 0}]
+      ]
+    },
+    "Score Channels": {
+      "main": [
+        [{"node": "Generate Pitches", "type": "main", "index": 0}]
+      ]
+    },
+    "Generate Pitches": {
+      "main": [
+        [{"node": "Send Digest", "type": "main", "index": 0}]
+      ]
+    },
+    "Send Digest": {
+      "main": [
+        [{"node": "Check Success", "type": "main", "index": 0}]
+      ]
+    },
+    "Check Success": {
+      "main": [
+        [],
+        [{"node": "Notify Admin (Error)", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "versionId": "sprint5-tg-scout-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": [
+    {"name": "sprint5"},
+    {"name": "tg-scout"}
+  ]
+}
