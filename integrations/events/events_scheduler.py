@@ -1,5 +1,6 @@
 """EventsScheduler: APScheduler jobs for the Events Agent."""
 
+import contextlib
 import logging
 from datetime import date
 
@@ -10,6 +11,7 @@ from telegram import Bot
 from telegram.error import TelegramError
 
 from app.config import Settings
+from integrations.error_handler import GlobalErrorHandler
 from integrations.events.digest import DigestBuilder
 from integrations.events.filter import RelevanceFilter, save_relevance
 from integrations.events.scraper import ConferenceScraper, save_events
@@ -71,6 +73,10 @@ class EventsScheduler:
             )
         except Exception as exc:
             logger.error("Events monthly scrape failed: %s", exc, exc_info=True)
+            with contextlib.suppress(Exception):
+                await GlobalErrorHandler(
+                    self.bot, self.engine, self.settings.telegram_admin_chat_id
+                ).handle("events", "monthly_scrape", exc, {})
 
     async def _monthly_digest_task(self) -> None:
         try:
@@ -80,6 +86,10 @@ class EventsScheduler:
             logger.info("Events monthly digest sent")
         except Exception as exc:
             logger.error("Events monthly digest failed: %s", exc, exc_info=True)
+            with contextlib.suppress(Exception):
+                await GlobalErrorHandler(
+                    self.bot, self.engine, self.settings.telegram_admin_chat_id
+                ).handle("events", "monthly_digest", exc, {})
 
     async def _deadline_check_task(self) -> None:
         try:
@@ -116,6 +126,10 @@ class EventsScheduler:
                     logger.error("Failed to send deadline reminder: %s", exc)
         except Exception as exc:
             logger.error("Events deadline check failed: %s", exc, exc_info=True)
+            with contextlib.suppress(Exception):
+                await GlobalErrorHandler(
+                    self.bot, self.engine, self.settings.telegram_admin_chat_id
+                ).handle("events", "deadline_check", exc, {})
 
     def shutdown(self) -> None:
         if self.scheduler.running:

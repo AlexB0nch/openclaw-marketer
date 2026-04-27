@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import Bot
 
 from app.config import Settings
+from integrations.error_handler import GlobalErrorHandler
 from integrations.telegram.monitor import MentionMonitor
 from integrations.telegram.outreach import OutreachManager
 from integrations.telegram.pitch import PitchGenerator
@@ -84,6 +86,12 @@ class ScoutScheduler:
                     )
                 except Exception as exc:
                     logger.error("Scout pipeline failed for product=%s: %s", product, exc)
+                    with contextlib.suppress(Exception):
+                        await GlobalErrorHandler(
+                            self._bot,
+                            self._engine,
+                            self._settings.telegram_admin_chat_id,
+                        ).handle("tg_scout", "weekly_pipeline", exc, {"product": product})
 
             try:
                 await outreach.send_weekly_digest(session, self._bot)

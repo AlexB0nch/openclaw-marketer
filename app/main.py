@@ -17,10 +17,12 @@ from integrations.telegram.commands import (
     button_callback_approve,
     button_callback_reject,
     cmd_approve,
+    cmd_dashboard,
     cmd_plan,
     cmd_reject,
     cmd_report,
     cmd_status,
+    set_dashboard_engine,
 )
 from integrations.telegram.scout_router import router as scout_router
 from integrations.yandex_direct.client import YandexDirectClient
@@ -28,7 +30,7 @@ from integrations.yandex_direct.client import YandexDirectClient
 logger = logging.getLogger(__name__)
 
 settings = Settings()
-app = FastAPI(title="AI Marketing Team", version="0.3.0")
+app = FastAPI(title="AI Marketing Team", version="1.0.0")
 app.include_router(content_router)
 app.include_router(scout_router)
 app.include_router(events_router)
@@ -197,7 +199,11 @@ async def startup() -> None:
         settings.database_url,
         echo=False,
         pool_pre_ping=True,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_recycle=settings.db_pool_recycle,
     )
+    set_dashboard_engine(_db_engine)
 
     bot = Bot(token=settings.telegram_bot_token)
 
@@ -236,6 +242,7 @@ async def startup() -> None:
     telegram_app.add_handler(CommandHandler("approve", cmd_approve))
     telegram_app.add_handler(CommandHandler("reject", cmd_reject))
     telegram_app.add_handler(CommandHandler("report", cmd_report))
+    telegram_app.add_handler(CommandHandler("dashboard", cmd_dashboard))
 
     telegram_app.add_handler(
         CallbackQueryHandler(button_callback_approve, pattern=r"^approve_\d+$")

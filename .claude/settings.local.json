@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(xargs ls *)"
+      "Bash(xargs ls *)",
+      "Bash(PYTHONPATH=. python -m pytest tests/integration/test_full_pipeline.py -v --asyncio-mode=auto)"
     ]
   }
 }

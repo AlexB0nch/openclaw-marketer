@@ -1,5 +1,6 @@
 """APScheduler setup for Analytics Agent tasks."""
 
+import contextlib
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -12,6 +13,7 @@ from telegram.error import TelegramError
 from app.config import Settings
 from integrations.analytics.digest import AnomalyDetector, MorningDigest, WeeklyReport
 from integrations.analytics.engine import AnalyticsEngine
+from integrations.error_handler import GlobalErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +71,10 @@ class AnalyticsScheduler:
                     logger.error("Failed to send morning digest: %s", exc)
         except Exception as exc:
             logger.error("Morning digest task failed: %s", exc, exc_info=True)
+            with contextlib.suppress(Exception):
+                await GlobalErrorHandler(
+                    self.bot, self.db_engine, self.settings.telegram_admin_chat_id
+                ).handle("analytics", "morning_digest", exc, {})
 
     async def weekly_report_task(self) -> None:
         """Generate and send the weekly analytics report."""
@@ -89,6 +95,10 @@ class AnalyticsScheduler:
                     logger.error("Failed to send weekly report: %s", exc)
         except Exception as exc:
             logger.error("Weekly report task failed: %s", exc, exc_info=True)
+            with contextlib.suppress(Exception):
+                await GlobalErrorHandler(
+                    self.bot, self.db_engine, self.settings.telegram_admin_chat_id
+                ).handle("analytics", "weekly_report", exc, {})
 
     async def anomaly_check_task(self) -> None:
         """Check for metric anomalies and fire alerts if found."""
@@ -109,6 +119,10 @@ class AnalyticsScheduler:
                         logger.error("Failed to send anomaly alert: %s", exc)
         except Exception as exc:
             logger.error("Anomaly check task failed: %s", exc, exc_info=True)
+            with contextlib.suppress(Exception):
+                await GlobalErrorHandler(
+                    self.bot, self.db_engine, self.settings.telegram_admin_chat_id
+                ).handle("analytics", "anomaly_check", exc, {})
 
     def shutdown(self) -> None:
         """Stop the scheduler."""

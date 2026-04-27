@@ -1,9 +1,13 @@
 # AI Marketing Team
 
+![version](https://img.shields.io/badge/version-1.0.0-blue)
+
 Система автономных маркетинговых агентов на базе OpenClaw.  
 Telegram-бот — главный интерфейс управления.
 
 **Стек:** Python 3.11 · FastAPI · PostgreSQL · python-telegram-bot · APScheduler · n8n · Docker Compose
+
+📚 Подробная документация: [docs/AGENTS.md](docs/AGENTS.md) · [docs/RUNBOOK.md](docs/RUNBOOK.md)
 
 ---
 
@@ -762,3 +766,116 @@ psql $DATABASE_URL -f db/migrations/007_sprint6_events.sql
 - `events_calendar` — конференции с полями name, url, start_date, cfp_deadline, status и т.д.
 - `events_abstracts` — черновики заявок спикеров
 - `events_applications` — зарегистрированные заявки (стаб)
+
+---
+
+## Sprint 7 — Integration, Polish & Production Hardening (v1.0.0)
+
+Sprint 7 превращает набор агентов в production-ready систему: единая панель,
+центральный обработчик ошибок, автоматический бэкап и end-to-end тесты.
+
+### `/dashboard` — единая панель статуса
+
+Команда `/dashboard` в Telegram возвращает агрегированное состояние всей
+системы за один запрос:
+
+```
+🏠 AI Marketing — Dashboard
+
+📋 Strategist
+   Активный план: #42 (approved)
+   В очереди на одобрение: 0
+
+✍️ Content
+   Опубликовано за 24 ч: 6
+   Pending слотов: 3
+
+📊 Analytics
+   Последний снимок: 2026-04-27 08:30
+   Аномалий за 24 ч: 0
+
+💰 Ads
+   Запущенных кампаний: 4
+   Расход за сегодня: 1 240 ₽
+
+🔍 TG Scout
+   Каналов в БД: 218
+
+🎤 Events
+   Предстоящих CFP: 7 (ближайший через 5 дн.)
+
+⚙️ System
+   n8n: ok
+   DLQ ошибок за 24 ч: 0
+```
+
+Команда никогда не падает — недоступные источники возвращаются как «n/a».
+
+### Dead Letter Queue
+
+Все 5 шедулеров (Strategist, Content, Analytics, Ads, TG Scout, Events)
+обёрнуты в `GlobalErrorHandler`. Любое исключение из cron-задачи:
+
+1. Логируется (`logger.error` + traceback)
+2. Сохраняется в таблицу `dead_letter_queue` (`agent`, `task`, `payload`,
+   `error_message`, `traceback`, `attempts`, `status`)
+3. Отправляется алерт админу в Telegram
+
+Просмотр и retry — см. [docs/RUNBOOK.md](docs/RUNBOOK.md#повторный-запуск-задачи-из-dlq).
+
+Миграция:
+```bash
+psql $DATABASE_URL -f db/migrations/008_sprint7_dlq.sql
+```
+
+### Connection pool (asyncpg)
+
+`app/main.py` теперь создаёт `create_async_engine` с явными параметрами
+пула: `pool_size=10`, `max_overflow=20`, `pool_recycle=3600`. Под нагрузкой
+больше нет `TooManyConnectionsError`.
+
+Переопределить можно через env: `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_RECYCLE`.
+
+### Auto-backup в S3
+
+Новый cron `daily_backup` (Strategist scheduler) каждый день в 03:00 MSK
+делает `pg_dump`, gzip-ит дамп и загружает в S3:
+
+```
+s3://$AWS_S3_BACKUP_BUCKET/backups/YYYY-MM-DD/<timestamp>.sql.gz
+```
+
+Если AWS-переменные не заданы, задача выходит штатно (no-op). Восстановление
+— см. [docs/RUNBOOK.md](docs/RUNBOOK.md#восстановление-из-бэкапа-s3).
+
+Новые env vars:
+```dotenv
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_S3_BACKUP_BUCKET=
+AWS_REGION=us-east-1
+```
+
+### n8n Uptime Monitor
+
+`n8n-workflows/uptime-monitor.json` — каждые 5 минут пингует `/health` и
+шлёт алерт в Telegram, если код ответа ≠ 200.
+
+### End-to-end тесты
+
+`tests/integration/test_full_pipeline.py` — 8 сквозных тестов, по одному
+на каждый агент + dashboard + DLQ:
+
+| # | Тест | Покрытие |
+|---|------|----------|
+| 1 | `test_strategist_to_content_pipeline` | план → одобрение → слоты |
+| 2 | `test_content_to_publish_pipeline` | генерация → публикация в TG |
+| 3 | `test_analytics_digest_runs_without_crash` | morning digest |
+| 4 | `test_ads_campaign_approval_flow` | draft → approve → run |
+| 5 | `test_tg_scout_weekly_pipeline` | search → score → pitch |
+| 6 | `test_events_monthly_pipeline` | scrape → filter → digest |
+| 7 | `test_dead_letter_queue_saves_on_error` | DLQ-инсерт + Telegram alert |
+| 8 | `test_dashboard_command_returns_message` | `/dashboard` без падений |
+
+**Sprint 7:** добавлено 8 интеграционных тестов. Итого: 267 тестов,
+black ✅, ruff ✅, coverage ≥ 70%.

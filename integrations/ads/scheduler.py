@@ -1,5 +1,6 @@
 """AdsScheduler: APScheduler jobs for the Ads Agent."""
 
+import contextlib
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -10,6 +11,7 @@ from telegram.error import TelegramError
 
 from app.config import Settings
 from integrations.ads.budget_monitor import BudgetMonitor
+from integrations.error_handler import GlobalErrorHandler
 from integrations.yandex_direct.ab_test import ABTestManager
 from integrations.yandex_direct.client import YandexDirectClient
 
@@ -84,6 +86,10 @@ class AdsScheduler:
 
         except Exception as exc:
             logger.error("A/B test check task failed: %s", exc, exc_info=True)
+            with contextlib.suppress(Exception):
+                await GlobalErrorHandler(
+                    self.bot, self.engine, self.settings.telegram_admin_chat_id
+                ).handle("ads", "ab_test_check", exc, {})
 
     async def _budget_check_task(self) -> None:
         """Check daily spend limits and auto-pause if monthly limit hit."""
@@ -124,6 +130,10 @@ class AdsScheduler:
 
         except Exception as exc:
             logger.error("Budget check task failed: %s", exc, exc_info=True)
+            with contextlib.suppress(Exception):
+                await GlobalErrorHandler(
+                    self.bot, self.engine, self.settings.telegram_admin_chat_id
+                ).handle("ads", "budget_check", exc, {})
 
     async def _weekly_report_task(self) -> None:
         """Send weekly ad spend summary to Telegram admin."""
@@ -165,6 +175,10 @@ class AdsScheduler:
 
         except Exception as exc:
             logger.error("Weekly ads report task failed: %s", exc, exc_info=True)
+            with contextlib.suppress(Exception):
+                await GlobalErrorHandler(
+                    self.bot, self.engine, self.settings.telegram_admin_chat_id
+                ).handle("ads", "weekly_report", exc, {})
 
     def shutdown(self) -> None:
         """Stop scheduler."""
