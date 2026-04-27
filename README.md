@@ -720,3 +720,45 @@ ai-marketing-team/
 ## Переменные окружения
 
 Смотрите [`.env.example`](.env.example). Все секреты хранятся только в GitHub Secrets и локальном `.env` (не в репозитории).
+
+---
+
+## Sprint 6 — Events Agent (Conference Scout)
+
+### Что делает
+- Ежемесячно собирает русскоязычные tech-конференции с 6 источников (aiconf.ru, productsense.io, ritfest.ru, habr.com/ru/events/, ppc.world/events/, tadviser.ru)
+- Оценивает релевантность конференций для каждого продукта через Claude Haiku (порог 50/100)
+- Отслеживает CFP дедлайны: напоминания за 14 и 3 дня
+- Генерирует черновики заявок спикеров через Claude Sonnet
+- Отправляет ежемесячный дайджест администратору в Telegram с inline-кнопками
+- Подача заявки — только с апрува администратора (стаб-заглушка)
+
+### Новые переменные окружения
+```env
+EVENTS_ENABLED=true   # включить Events Agent
+```
+
+### Новые HTTP API эндпоинты
+- `POST /api/v1/events/scrape` — запустить сбор конференций
+- `POST /api/v1/events/filter` — оценить релевантность
+- `GET  /api/v1/events/calendar` — список предстоящих событий
+- `POST /api/v1/events/digest/send` — отправить дайджест
+- `POST /api/v1/events/abstract/{event_id}` — сгенерировать черновик заявки
+
+### Миграция БД
+```bash
+psql $DATABASE_URL -f db/migrations/007_sprint6_events.sql
+```
+
+### Расписание (APScheduler)
+- 1-е число каждого месяца 10:00 МСК — сбор + фильтрация
+- 1-е число каждого месяца 10:30 МСК — отправка дайджеста
+- Ежедневно 09:00 МСК — проверка дедлайнов
+
+### n8n workflow
+Импортируй `n8n-workflows/events-pipeline.json` в n8n. Установи env var `APP_BASE_URL`.
+
+### Новые таблицы БД
+- `events_calendar` — конференции с полями name, url, start_date, cfp_deadline, status и т.д.
+- `events_abstracts` — черновики заявок спикеров
+- `events_applications` — зарегистрированные заявки (стаб)

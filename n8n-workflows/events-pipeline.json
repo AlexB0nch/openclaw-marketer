@@ -1,0 +1,80 @@
+{
+  "name": "Events Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "cronExpression", "expression": "0 10 1 * *"}]
+        }
+      },
+      "name": "Cron 1st of Month 10:00",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "id": "cron_1st_of_month"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APP_BASE_URL}}/api/v1/events/scrape",
+        "options": {}
+      },
+      "name": "Trigger Scrape",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 300],
+      "id": "trigger_scrape"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APP_BASE_URL}}/api/v1/events/filter",
+        "options": {}
+      },
+      "name": "Trigger Filter",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [680, 300],
+      "id": "trigger_filter"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APP_BASE_URL}}/api/v1/events/digest/send",
+        "options": {}
+      },
+      "name": "Send Digest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [900, 300],
+      "id": "send_digest"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APP_BASE_URL}}/api/v1/events/digest/send",
+        "options": {},
+        "conditions": {}
+      },
+      "name": "Notify Admin on Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [900, 480],
+      "id": "notify_admin_error"
+    }
+  ],
+  "connections": {
+    "Cron 1st of Month 10:00": {
+      "main": [[{"node": "Trigger Scrape", "type": "main", "index": 0}]]
+    },
+    "Trigger Scrape": {
+      "main": [[{"node": "Trigger Filter", "type": "main", "index": 0}]]
+    },
+    "Trigger Filter": {
+      "main": [[{"node": "Send Digest", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "events-pipeline"
+}

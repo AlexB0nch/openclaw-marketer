@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     tgstat_api_key: str = ""
     monitor_keywords: str = "AI помощник,ИИ тренер,агрегатор новостей"
 
+    # Events Agent (Sprint 6)
+    events_enabled: bool = False
+
     @property
     def database_url(self) -> str:
         return (
