@@ -17,6 +17,7 @@ os.environ.setdefault("YANDEX_DIRECT_TOKEN", "test_yd_token")
 os.environ.setdefault("YANDEX_DIRECT_LOGIN", "test_yd_login")
 os.environ.setdefault("GOOGLE_ADS_CUSTOMER_ID", "123456789")
 os.environ.setdefault("DAILY_SPEND_ALERT_THRESHOLD_RUB", "5000")
+os.environ.setdefault("EVENTS_ENABLED", "true")
 
 from unittest.mock import AsyncMock, MagicMock  # noqa: E402
 
@@ -226,6 +227,51 @@ async def test_db_engine():
                 "  clicks INTEGER NOT NULL DEFAULT 0,"
                 "  impressions INTEGER NOT NULL DEFAULT 0,"
                 "  ctr REAL NOT NULL DEFAULT 0.0"
+                ")"
+            )
+        )
+
+        # ── Sprint 6 tables ──────────────────────────────────────────────────
+        await conn.execute(
+            text(
+                "CREATE TABLE events_calendar ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  name TEXT NOT NULL,"
+                "  url TEXT NOT NULL DEFAULT '',"
+                "  start_date TEXT,"
+                "  cfp_deadline TEXT,"
+                "  city TEXT,"
+                "  is_online INTEGER NOT NULL DEFAULT 0,"
+                "  audience_size INTEGER,"
+                "  description TEXT NOT NULL DEFAULT '',"
+                "  topics TEXT NOT NULL DEFAULT '[]',"
+                "  source TEXT NOT NULL DEFAULT '',"
+                "  status TEXT NOT NULL DEFAULT 'new',"
+                "  created_at TEXT DEFAULT (datetime('now')),"
+                "  updated_at TEXT DEFAULT (datetime('now'))"
+                ")"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE TABLE events_abstracts ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  event_id INTEGER NOT NULL,"
+                "  product TEXT NOT NULL,"
+                "  abstract_text TEXT NOT NULL,"
+                "  created_at TEXT DEFAULT (datetime('now'))"
+                ")"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE TABLE events_applications ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  event_id INTEGER NOT NULL,"
+                "  product TEXT NOT NULL,"
+                "  action TEXT NOT NULL DEFAULT 'registered',"
+                "  note TEXT,"
+                "  created_at TEXT DEFAULT (datetime('now'))"
                 ")"
             )
         )

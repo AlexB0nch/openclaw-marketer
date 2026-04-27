@@ -43,17 +43,15 @@ class Settings(BaseSettings):
     # Analytics alert thresholds (Sprint 3)
     daily_spend_alert_threshold_rub: float = 5_000.0
 
-<<<<<<< HEAD
-    # Events Agent (Sprint 6)
-    events_enabled: bool = False
-=======
     # TG Scout (Sprint 5)
     telethon_api_id: int = 0
     telethon_api_hash: str = ""
     telethon_session_path: str = "./data/telethon.session"
     tgstat_api_key: str = ""
     monitor_keywords: str = "AI помощник,ИИ тренер,агрегатор новостей"
->>>>>>> origin/main
+
+    # Events Agent (Sprint 6)
+    events_enabled: bool = False
 
     @property
     def database_url(self) -> str:
