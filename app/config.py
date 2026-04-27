@@ -53,6 +53,17 @@ class Settings(BaseSettings):
     # Events Agent (Sprint 6)
     events_enabled: bool = False
 
+    # Sprint 7: DB connection pool
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_recycle: int = 3600
+
+    # Sprint 7: S3 backup (optional)
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_s3_backup_bucket: str = ""
+    aws_region: str = "us-east-1"
+
     @property
     def database_url(self) -> str:
         return (

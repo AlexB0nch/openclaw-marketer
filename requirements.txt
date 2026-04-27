@@ -17,6 +17,7 @@ google-ads==24.1.0
 tapi-yandex-direct==2021.5.29
 telethon==1.36.0
 beautifulsoup4==4.12.3
+aioboto3==13.0.0
 
 # dev / test
 pytest==8.2.0

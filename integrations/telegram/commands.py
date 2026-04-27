@@ -1,8 +1,12 @@
 """Telegram command handlers for Strategist agent."""
 
+import contextlib
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
@@ -10,6 +14,178 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+# Module-level engine reference set by app.main on startup so cmd_dashboard
+# can run DB queries without depending on a global app context.
+_dashboard_engine = None
+
+
+def set_dashboard_engine(engine) -> None:
+    """Wire DB engine for /dashboard handler. Called from app startup."""
+    global _dashboard_engine
+    _dashboard_engine = engine
+
+
+async def _safe_count(session: AsyncSession, sql: str, params: dict | None = None) -> int:
+    try:
+        row = await session.execute(text(sql), params or {})
+        val = row.scalar()
+        return int(val or 0)
+    except Exception as exc:  # pragma: no cover — degraded mode
+        logger.warning("dashboard query failed: %s", exc)
+        return -1
+
+
+async def _safe_scalar(session: AsyncSession, sql: str, params: dict | None = None):
+    try:
+        row = await session.execute(text(sql), params or {})
+        return row.scalar()
+    except Exception as exc:  # pragma: no cover
+        logger.warning("dashboard query failed: %s", exc)
+        return None
+
+
+async def _build_dashboard_text(engine) -> str:
+    """Compose Telegram dashboard message. Never raises."""
+    msk = timezone(timedelta(hours=3))
+    now_msk = datetime.now(tz=msk).strftime("%Y-%m-%d %H:%M MSK")
+    lines = ["🤖 AI Marketing Team — Dashboard", f"🕐 {now_msk}", "", "📋 Agents"]
+
+    if engine is None:
+        lines.append("⚪ DB не подключена")
+        return "\n".join(lines)
+
+    try:
+        async with AsyncSession(engine) as session:
+            # Strategist
+            plan_id = await _safe_scalar(
+                session,
+                "SELECT id FROM content_plans WHERE status='approved' " "ORDER BY id DESC LIMIT 1",
+            )
+            plan_date = await _safe_scalar(
+                session,
+                "SELECT week_start_date FROM content_plans WHERE status='approved' "
+                "ORDER BY id DESC LIMIT 1",
+            )
+            if plan_id:
+                lines.append(f"🟢 Стратег        план #{plan_id}, approved {plan_date}")
+            else:
+                lines.append("⚪ Стратег        нет одобренных планов")
+
+            # Content
+            published = await _safe_count(
+                session, "SELECT COUNT(*) FROM scheduled_posts WHERE status='published'"
+            )
+            pending = await _safe_count(
+                session,
+                "SELECT COUNT(*) FROM scheduled_posts " "WHERE status IN ('pending','generated')",
+            )
+            content_icon = "🟢" if published >= 0 else "⚪"
+            lines.append(
+                f"{content_icon} Контент        {published} постов опубликовано, {pending} pending"
+            )
+
+            # Analytics
+            snap_date = await _safe_scalar(
+                session,
+                "SELECT snapshot_date FROM analytics_snapshots " "ORDER BY id DESC LIMIT 1",
+            )
+            if snap_date:
+                lines.append(f"🟢 Аналитика     snapshot {snap_date}")
+            else:
+                lines.append("⚪ Аналитика     нет снапшотов")
+
+            # Ads
+            running = await _safe_count(
+                session, "SELECT COUNT(*) FROM ad_campaigns WHERE status='running'"
+            )
+            ads_icon = "🟢" if running >= 0 else "⚪"
+            lines.append(f"{ads_icon} Реклама        {running} кампании активны")
+
+            # TG Scout
+            scout_icon = "⚪"
+            scout_text = "TG Scout       нет данных"
+            try:
+                channel_count = await _safe_count(session, "SELECT COUNT(*) FROM tg_channels")
+                pitch_count = await _safe_count(
+                    session,
+                    "SELECT COUNT(*) FROM tg_pitch_drafts WHERE status='pending'",
+                )
+                if channel_count >= 0:
+                    scout_icon = "🟢" if channel_count > 0 else "⚪"
+                    scout_text = (
+                        f"TG Scout       {channel_count} каналов в базе, "
+                        f"{pitch_count} ожидают питча"
+                    )
+            except Exception:
+                pass
+            lines.append(f"{scout_icon} {scout_text}")
+
+            # Events
+            events_count = await _safe_count(session, "SELECT COUNT(*) FROM events_calendar")
+            today = datetime.now(tz=msk).date()
+            month_end = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+            deadlines = await _safe_count(
+                session,
+                "SELECT COUNT(*) FROM events_calendar "
+                "WHERE cfp_deadline >= :start AND cfp_deadline < :end",
+                {"start": today.isoformat(), "end": month_end.isoformat()},
+            )
+            events_icon = "🟢" if events_count > 0 else "⚪"
+            lines.append(
+                f"{events_icon} Events         {events_count} конференций, "
+                f"{deadlines} дедлайнов в этом месяце"
+            )
+
+            # n8n placeholder
+            lines.append("⚪ n8n            webhooks не проверялись")
+
+            # Approval queue
+            pending_plans = await _safe_count(
+                session,
+                "SELECT COUNT(*) FROM content_plans WHERE status='pending_approval'",
+            )
+            pending_ads = await _safe_count(
+                session,
+                "SELECT COUNT(*) FROM ad_campaigns WHERE status='pending_approval'",
+            )
+            queue = max(0, pending_plans) + max(0, pending_ads)
+            lines.append("")
+            lines.append(f"✅ Очередь апрувов: {queue}")
+
+            # Errors 24h
+            errors_24h = -1
+            try:
+                errors_24h = await _safe_count(
+                    session,
+                    "SELECT COUNT(*) FROM dead_letter_queue " "WHERE created_at >= :since",
+                    {"since": (datetime.now(tz=msk) - timedelta(hours=24)).isoformat()},
+                )
+            except Exception:
+                errors_24h = 0
+            err_icon = "✅" if errors_24h == 0 else "⚠️"
+            errors_display = max(0, errors_24h)
+            lines.append(f"{err_icon}  Ошибки за 24ч: {errors_display}")
+    except Exception as exc:
+        logger.error("dashboard build failed: %s", exc)
+        lines.append("⚪ Ошибка чтения статуса")
+
+    return "\n".join(lines)
+
+
+async def cmd_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show unified system dashboard. Never raises — degrades gracefully."""
+    if not update.message:
+        return
+    try:
+        text_msg = await _build_dashboard_text(_dashboard_engine)
+        await update.message.reply_text(text_msg)
+    except Exception as exc:
+        logger.error("cmd_dashboard failed: %s", exc)
+        with contextlib.suppress(Exception):
+            await update.message.reply_text(
+                "🤖 AI Marketing Team — Dashboard\n⚪ Сервис временно недоступен"
+            )
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

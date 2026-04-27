@@ -10,6 +10,8 @@ from telegram import Bot
 from telegram.error import TelegramError
 
 from app.config import Settings
+from integrations.backup import BackupManager
+from integrations.error_handler import GlobalErrorHandler
 from integrations.strategist.planner import generate_weekly_plan, save_plan_to_db
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,14 @@ class StrategistScheduler:
             trigger=CronTrigger(day_of_week=6, hour=19, minute=5, timezone="Europe/Moscow"),
             id="weekly_digest",
             name="Weekly Digest Sender",
+        )
+
+        # Sprint 7: nightly DB backup at 03:00 MSK
+        self.scheduler.add_job(
+            self.daily_backup_task,
+            trigger=CronTrigger(hour=3, minute=0, timezone="Europe/Moscow"),
+            id="daily_backup",
+            name="PostgreSQL Daily Backup",
         )
 
         self.scheduler.start()
@@ -77,6 +87,13 @@ class StrategistScheduler:
 
         except Exception as e:
             logger.error(f"Weekly plan generation failed: {e}", exc_info=True)
+            try:
+                handler = GlobalErrorHandler(
+                    self.bot, self.engine, self.settings.telegram_admin_chat_id
+                )
+                await handler.handle("strategist", "weekly_plan", e, {})
+            except Exception:
+                pass
 
     async def weekly_digest_task(self) -> None:
         """Generate and send weekly digest."""
@@ -97,6 +114,30 @@ class StrategistScheduler:
 
         except Exception as e:
             logger.error(f"Weekly digest task failed: {e}", exc_info=True)
+            try:
+                handler = GlobalErrorHandler(
+                    self.bot, self.engine, self.settings.telegram_admin_chat_id
+                )
+                await handler.handle("strategist", "weekly_digest", e, {})
+            except Exception:
+                pass
+
+    async def daily_backup_task(self) -> None:
+        """Run nightly pg_dump and upload to S3."""
+        try:
+            mgr = BackupManager()
+            key = await mgr.run_backup(self.settings)
+            if key:
+                logger.info("Daily backup completed: %s", key)
+        except Exception as e:
+            logger.error(f"Daily backup failed: {e}", exc_info=True)
+            try:
+                handler = GlobalErrorHandler(
+                    self.bot, self.engine, self.settings.telegram_admin_chat_id
+                )
+                await handler.handle("backup", "daily_backup", e, {})
+            except Exception:
+                pass
 
     def _format_plan_for_telegram(self, plan, plan_id: int) -> str:
         """Format ContentPlan as Markdown for Telegram."""
