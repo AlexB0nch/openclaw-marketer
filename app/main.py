@@ -231,9 +231,19 @@ async def startup() -> None:
             settings.telethon_api_id,
             settings.telethon_api_hash,
         )
-        scout_scheduler = ScoutScheduler(settings, _db_engine, bot, telethon_client)
-        scout_scheduler.start()
-        logger.info("TG Scout Agent enabled and started")
+        await telethon_client.connect()
+        telethon_ready = await telethon_client.is_user_authorized()
+        if not telethon_ready:
+            logger.warning(
+                "Telethon session not authorized — MentionMonitor disabled. "
+                "Run scripts/telethon_login.py to authorize."
+            )
+        elif not settings.telegram_enable_scout:
+            logger.info("TG Scout Agent disabled via TELEGRAM_ENABLE_SCOUT=false")
+        else:
+            scout_scheduler = ScoutScheduler(settings, _db_engine, bot, telethon_client)
+            scout_scheduler.start()
+            logger.info("TG Scout Agent enabled and started")
 
     telegram_app = Application.builder().token(settings.telegram_bot_token).build()
 

@@ -278,14 +278,17 @@ async def test_budget_monitor_daily_spend(ads_db, test_settings):
 @pytest.mark.asyncio
 async def test_budget_monitor_pauses_on_limit(ads_db, test_settings):
     """auto_pause_on_limit pauses all running campaigns when monthly limit is hit."""
-    # Insert enough spend to exceed the monthly limit
+    # Insert enough spend in the current month to exceed the monthly limit.
+    # Use the first of the current month so the row is always within
+    # check_monthly_spend's [month_start, today] window.
+    month_start = date.today().replace(day=1).isoformat()
     await ads_db.execute(
         text(
             "INSERT INTO ad_daily_spend "
             "(campaign_id, date, spend_rub, clicks, impressions, ctr) "
             "VALUES (3, :d, 95000.0, 1000, 10000, 0.1)"
         ),
-        {"d": "2026-04-01"},
+        {"d": month_start},
     )
     await ads_db.commit()
 

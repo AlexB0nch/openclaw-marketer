@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     telethon_session_path: str = "./data/telethon.session"
     tgstat_api_key: str = ""
     monitor_keywords: str = "AI помощник,ИИ тренер,агрегатор новостей"
+    telegram_enable_scout: bool = True
 
     # Events Agent (Sprint 6)
     events_enabled: bool = False

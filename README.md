@@ -571,6 +571,38 @@ MONITOR_KEYWORDS=AI помощник,ИИ тренер,агрегатор нов
 
 ⚠️ **Никогда не коммитьте `*.session` файлы** — они добавлены в `.gitignore`.
 
+### Telegram User Session Setup
+
+Telethon-сессия должна быть авторизована **до** запуска приложения, иначе
+`MentionMonitor` падает с `AuthKeyUnregisteredError` и Scout-функции отключаются.
+
+1. Заполни `TELETHON_API_ID`, `TELETHON_API_HASH`, `TELETHON_SESSION_PATH` в `.env`.
+2. Запусти интерактивный логин внутри контейнера:
+   ```bash
+   docker-compose exec app python scripts/telethon_login.py
+   ```
+3. Введи номер телефона в формате `+79XXXXXXXXX` (или задай заранее через `TELEGRAM_LOGIN_PHONE`).
+4. Введи код, пришедший в Telegram.
+5. Если включён 2FA — введи cloud-пароль.
+6. Перезапусти приложение **без `--force-recreate`**, чтобы сохранить session-файл:
+   ```bash
+   docker-compose restart app
+   ```
+7. Убедись, что в логах нет `MentionMonitor crashed` и есть `TG Scout Agent enabled and started`.
+
+Чтобы временно отключить Scout без удаления сессии, поставь `TELEGRAM_ENABLE_SCOUT=false`.
+
+> ⚠️ **Prod-рекомендация:** `TELETHON_SESSION_PATH=/tmp/telethon.session` теряется
+> при `--force-recreate` контейнера. Для prod лучше смонтировать постоянный
+> volume, например в `docker-compose.yml`:
+> ```yaml
+> services:
+>   app:
+>     volumes:
+>       - ./data:/app/data
+> ```
+> и использовать `TELETHON_SESSION_PATH=/app/data/telethon.session`.
+
 ### HTTP API (Scout)
 
 | Метод | Эндпоинт | Описание |
