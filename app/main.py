@@ -4,7 +4,13 @@ import os
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from telegram import Bot, Update
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    filters,
+)
 
 from app.config import Settings
 from integrations.ads.approval import AdsApprovalManager
@@ -305,12 +311,24 @@ async def startup() -> None:
 
     telegram_app = Application.builder().token(settings.telegram_bot_token).build()
 
-    telegram_app.add_handler(CommandHandler("status", cmd_status))
-    telegram_app.add_handler(CommandHandler("plan", cmd_plan))
-    telegram_app.add_handler(CommandHandler("approve", cmd_approve))
-    telegram_app.add_handler(CommandHandler("reject", cmd_reject))
-    telegram_app.add_handler(CommandHandler("report", cmd_report))
-    telegram_app.add_handler(CommandHandler("dashboard", cmd_dashboard))
+    # Restrict /commands to the admin chat only — non-admin users won't match
+    # any handler so their messages are silently ignored.
+    try:
+        admin_chat_id = int(settings.telegram_admin_chat_id)
+        admin_filter = filters.Chat(chat_id=admin_chat_id)
+    except (TypeError, ValueError):
+        logger.warning(
+            "TELEGRAM_ADMIN_CHAT_ID=%r is not a valid int — commands will be open to all chats",
+            settings.telegram_admin_chat_id,
+        )
+        admin_filter = None
+
+    telegram_app.add_handler(CommandHandler("status", cmd_status, filters=admin_filter))
+    telegram_app.add_handler(CommandHandler("plan", cmd_plan, filters=admin_filter))
+    telegram_app.add_handler(CommandHandler("approve", cmd_approve, filters=admin_filter))
+    telegram_app.add_handler(CommandHandler("reject", cmd_reject, filters=admin_filter))
+    telegram_app.add_handler(CommandHandler("report", cmd_report, filters=admin_filter))
+    telegram_app.add_handler(CommandHandler("dashboard", cmd_dashboard, filters=admin_filter))
 
     telegram_app.add_handler(
         CallbackQueryHandler(button_callback_approve, pattern=r"^approve_\d+$")
@@ -338,7 +356,20 @@ async def startup() -> None:
         CallbackQueryHandler(_events_reject_callback, pattern=r"^events_reject:\d+$")
     )
 
+    # Full PTB v20+ async lifecycle: initialize() alone only wires the bot
+    # object — it does NOT long-poll. Updates arrive only after start() +
+    # updater.start_polling(). Without these calls /status, /plan, /report,
+    # /dashboard never reach their handlers.
     await telegram_app.initialize()
+    await telegram_app.start()
+    await telegram_app.updater.start_polling()
+    try:
+        bot_user = await telegram_app.bot.get_me()
+        bot_username = bot_user.username or "<unknown>"
+    except Exception as exc:  # pragma: no cover — diagnostic only
+        logger.warning("get_me() failed after polling started: %s", exc)
+        bot_username = "<unknown>"
+    _startup_logger.info("Telegram bot polling started, bot=@%s", bot_username)
     logger.info("Application startup complete")
 
 
@@ -365,7 +396,17 @@ async def shutdown() -> None:
         scout_scheduler.shutdown()
 
     if telegram_app:
+        # Reverse of startup: stop the long-poll loop first, then the
+        # application, then release resources.
+        try:
+            if telegram_app.updater and telegram_app.updater.running:
+                await telegram_app.updater.stop()
+            if telegram_app.running:
+                await telegram_app.stop()
+        except Exception as exc:  # pragma: no cover — diagnostic only
+            logger.warning("Telegram bot stop failed: %s", exc)
         await telegram_app.shutdown()
+        _startup_logger.info("Telegram bot polling stopped")
 
     logger.info("Application shutdown complete")
 
