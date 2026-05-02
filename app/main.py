@@ -28,7 +28,24 @@ from integrations.telegram.commands import (
 from integrations.telegram.scout_router import router as scout_router
 from integrations.yandex_direct.client import YandexDirectClient
 
+# Configure the root logger so INFO-level messages from `app.*` and
+# `integrations.*` reach Docker stdout. Uvicorn's default LOGGING_CONFIG
+# only attaches handlers to the `uvicorn`, `uvicorn.error`, and
+# `uvicorn.access` loggers — the root logger stays bare, which means
+# our `logger.info(...)` calls would otherwise fall through to
+# `logging.lastResort` (WARNING-only) and disappear silently.
+# `force=True` overrides any pre-existing handlers so this is robust
+# regardless of import/startup ordering.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    force=True,
+)
+
 logger = logging.getLogger(__name__)
+# Belt-and-braces: a logger Uvicorn always renders, used for the
+# critical Scout startup lines so they cannot be silently dropped.
+_startup_logger = logging.getLogger("uvicorn.error")
 
 settings = Settings()
 app = FastAPI(title="AI Marketing Team", version="1.0.0")
@@ -271,8 +288,19 @@ async def startup() -> None:
         elif not scout_enabled:
             logger.info("TG Scout disabled by TELEGRAM_ENABLE_SCOUT=false")
         else:
+            # Use uvicorn.error here so the lines surface in Docker logs
+            # even if root-logger config is somehow overridden later.
+            _startup_logger.info(
+                "About to start TG Scout: scout_enabled=%s authorized=%s",
+                scout_enabled,
+                authorized,
+            )
             scout_scheduler = ScoutScheduler(settings, _db_engine, bot, telethon_client)
             scout_scheduler.start()
+            _startup_logger.info("TG Scout start() completed")
+            # MentionMonitor is started indirectly: ScoutScheduler.start()
+            # spawns asyncio.create_task(self.start_mention_monitor()),
+            # which calls MentionMonitor(...).start_monitoring(bot).
             logger.info("TG Scout & MentionMonitor started")
 
     telegram_app = Application.builder().token(settings.telegram_bot_token).build()
