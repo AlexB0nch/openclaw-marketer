@@ -222,24 +222,28 @@ async def startup() -> None:
         events_scheduler.start()
         logger.info("Events Agent enabled and started")
 
-    if settings.telethon_api_id:
+    scout_enabled = settings.telegram_enable_scout
+    session_path = settings.telethon_session_path
+    abs_session_path = os.path.abspath(session_path)
+    # Telethon appends ".session" if missing — mirror that for the existence check
+    session_file = (
+        abs_session_path if abs_session_path.endswith(".session") else abs_session_path + ".session"
+    )
+    session_exists = os.path.exists(session_file)
+
+    if not settings.telethon_api_id:
+        logger.info(
+            "Telethon startup: TELETHON_API_ID not set — Scout disabled. "
+            "scout_enabled=%s session_path=%s exists=%s authorized=%s",
+            scout_enabled,
+            session_file,
+            session_exists,
+            None,
+        )
+    else:
         from telethon import TelegramClient
 
         from integrations.telegram.scout_scheduler import ScoutScheduler
-
-        session_path = settings.telethon_session_path
-        abs_session_path = os.path.abspath(session_path)
-        # Telethon appends ".session" if missing — mirror that for the existence check
-        session_file = abs_session_path
-        if not session_file.endswith(".session"):
-            session_file = session_file + ".session"
-        session_exists = os.path.exists(session_file)
-        logger.info(
-            "Telethon session file: path=%s abs=%s exists=%s",
-            session_path,
-            abs_session_path,
-            session_exists,
-        )
 
         telethon_client = TelegramClient(
             session_path,
@@ -247,10 +251,16 @@ async def startup() -> None:
             settings.telethon_api_hash,
         )
         await telethon_client.connect()
-        telethon_ready = await telethon_client.is_user_authorized()
-        logger.debug("Telethon session check: path=%s authorized=%s", session_path, telethon_ready)
+        authorized = await telethon_client.is_user_authorized()
+        logger.info(
+            "Telethon startup: scout_enabled=%s session_path=%s exists=%s authorized=%s",
+            scout_enabled,
+            session_file,
+            session_exists,
+            authorized,
+        )
 
-        if not telethon_ready:
+        if not authorized:
             logger.warning(
                 "Telethon session not authorized — MentionMonitor disabled. "
                 "Session file %s (exists=%s). "
@@ -258,12 +268,12 @@ async def startup() -> None:
                 session_file,
                 session_exists,
             )
-        elif not settings.telegram_enable_scout:
-            logger.info("TG Scout Agent disabled via TELEGRAM_ENABLE_SCOUT=false")
+        elif not scout_enabled:
+            logger.info("TG Scout disabled by TELEGRAM_ENABLE_SCOUT=false")
         else:
             scout_scheduler = ScoutScheduler(settings, _db_engine, bot, telethon_client)
             scout_scheduler.start()
-            logger.info("TG Scout Agent enabled and started")
+            logger.info("TG Scout & MentionMonitor started")
 
     telegram_app = Application.builder().token(settings.telegram_bot_token).build()
 
