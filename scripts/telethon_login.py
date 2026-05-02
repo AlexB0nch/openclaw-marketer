@@ -32,6 +32,8 @@ async def main() -> int:
     api_id_raw = os.environ.get("TELETHON_API_ID", "").strip()
     api_hash = os.environ.get("TELETHON_API_HASH", "").strip()
     session_path = os.environ.get("TELETHON_SESSION_PATH", "./data/telethon.session").strip()
+    abs_session_path = os.path.abspath(session_path)
+    logger.info("Using session path: %s (abs=%s)", session_path, abs_session_path)
 
     if not api_id_raw or not api_hash:
         logger.error("TELETHON_API_ID and TELETHON_API_HASH must be set.")
@@ -68,7 +70,7 @@ async def main() -> int:
 
         me = await client.get_me()
         username = getattr(me, "username", None) or getattr(me, "first_name", "<unknown>")
-        logger.info("Authorized as %s. Session saved to %s", username, session_path)
+        logger.info("Authorized as %s. Session saved to %s", username, abs_session_path)
         return 0
     finally:
         await client.disconnect()
