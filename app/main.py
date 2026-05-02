@@ -1,4 +1,5 @@
 import logging
+import os
 
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -226,17 +227,38 @@ async def startup() -> None:
 
         from integrations.telegram.scout_scheduler import ScoutScheduler
 
+        session_path = settings.telethon_session_path
+        abs_session_path = os.path.abspath(session_path)
+        # Telethon appends ".session" if missing — mirror that for the existence check
+        session_file = abs_session_path
+        if not session_file.endswith(".session"):
+            session_file = session_file + ".session"
+        session_exists = os.path.exists(session_file)
+        logger.info(
+            "Telethon session file: path=%s abs=%s exists=%s",
+            session_path,
+            abs_session_path,
+            session_exists,
+        )
+
         telethon_client = TelegramClient(
-            settings.telethon_session_path,
+            session_path,
             settings.telethon_api_id,
             settings.telethon_api_hash,
         )
         await telethon_client.connect()
         telethon_ready = await telethon_client.is_user_authorized()
+        logger.debug(
+            "Telethon session check: path=%s authorized=%s", session_path, telethon_ready
+        )
+
         if not telethon_ready:
             logger.warning(
                 "Telethon session not authorized — MentionMonitor disabled. "
-                "Run scripts/telethon_login.py to authorize."
+                "Session file %s (exists=%s). "
+                "Run scripts/telethon_login.py to authorize.",
+                session_file,
+                session_exists,
             )
         elif not settings.telegram_enable_scout:
             logger.info("TG Scout Agent disabled via TELEGRAM_ENABLE_SCOUT=false")

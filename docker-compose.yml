@@ -63,6 +63,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      # Persistent app data — must survive container recreate/redeploy.
+      # Holds the Telethon session file (TELETHON_SESSION_PATH=/app/data/telethon.session).
+      - ./data:/app/data
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       interval: 15s

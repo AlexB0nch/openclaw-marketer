@@ -576,32 +576,58 @@ MONITOR_KEYWORDS=AI помощник,ИИ тренер,агрегатор нов
 Telethon-сессия должна быть авторизована **до** запуска приложения, иначе
 `MentionMonitor` падает с `AuthKeyUnregisteredError` и Scout-функции отключаются.
 
-1. Заполни `TELETHON_API_ID`, `TELETHON_API_HASH`, `TELETHON_SESSION_PATH` в `.env`.
-2. Запусти интерактивный логин внутри контейнера:
+Session-файл живёт на persistent-volume (`./data` на хосте → `/app/data`
+внутри контейнера, см. `docker-compose.yml`), поэтому **переживает
+`docker-compose up -d --force-recreate`**.
+
+1. На хосте создай директорию данных:
+   ```bash
+   mkdir -p data
+   ```
+2. Заполни `TELETHON_API_ID`, `TELETHON_API_HASH` в `.env`. Оставь
+   `TELETHON_SESSION_PATH=/app/data/telethon.session` (значение по умолчанию).
+3. Подними контейнеры: `docker-compose up -d`.
+4. Запусти интерактивный логин **внутри** контейнера:
    ```bash
    docker-compose exec app python scripts/telethon_login.py
    ```
-3. Введи номер телефона в формате `+79XXXXXXXXX` (или задай заранее через `TELEGRAM_LOGIN_PHONE`).
-4. Введи код, пришедший в Telegram.
-5. Если включён 2FA — введи cloud-пароль.
-6. Перезапусти приложение **без `--force-recreate`**, чтобы сохранить session-файл:
+5. Введи номер телефона в формате `+79XXXXXXXXX` (или задай заранее через
+   `TELEGRAM_LOGIN_PHONE`).
+6. Введи код, пришедший в Telegram.
+7. Если включён 2FA — введи cloud-пароль.
+8. Перезапусти приложение, чтобы оно подхватило свежую сессию:
    ```bash
    docker-compose restart app
    ```
-7. Убедись, что в логах нет `MentionMonitor crashed` и есть `TG Scout Agent enabled and started`.
+9. Проверь логи — должна быть строка
+   `Telethon session file: path=/app/data/telethon.session abs=/app/data/telethon.session exists=True`,
+   а затем `TG Scout Agent enabled and started`. Предупреждения
+   `MentionMonitor crashed` или `Telethon session not authorized` быть не должно.
 
-Чтобы временно отключить Scout без удаления сессии, поставь `TELEGRAM_ENABLE_SCOUT=false`.
+Чтобы временно отключить Scout без удаления сессии, поставь
+`TELEGRAM_ENABLE_SCOUT=false` в `.env` и перезапусти контейнер.
 
-> ⚠️ **Prod-рекомендация:** `TELETHON_SESSION_PATH=/tmp/telethon.session` теряется
-> при `--force-recreate` контейнера. Для prod лучше смонтировать постоянный
-> volume, например в `docker-compose.yml`:
-> ```yaml
-> services:
->   app:
->     volumes:
->       - ./data:/app/data
+> 🔐 **Если контейнер запускается не от root:** `./data` на хосте должен
+> быть writable для UID, под которым работает app-процесс
+> (`docker-compose exec app id` — посмотреть UID; затем
+> `chown -R <uid>:<gid> data` на хосте).
+>
+> ⚠️ **Если `./data:/app/data` не примонтирован в сервисе `app`**, Telethon
+> упадёт при старте с `sqlite3.OperationalError: unable to open database file`
+> (директория `/app/data` не существует внутри контейнера). Убедись, что блок
+> `volumes:` присутствует у сервиса `app` в `docker-compose.yml`.
+>
+> 🔁 **Миграция с прежнего `/tmp/telethon.session`** (если на VPS уже
+> был старый путь):
+> ```bash
+> mkdir -p data
+> # опционально, если контейнер не от root:
+> # chown -R 1000:1000 data
+> docker-compose up -d
+> docker-compose exec app python scripts/telethon_login.py
+> docker-compose up -d --force-recreate app
+> docker-compose logs --tail 50 app | grep -i telethon
 > ```
-> и использовать `TELETHON_SESSION_PATH=/app/data/telethon.session`.
 
 ### HTTP API (Scout)
 
