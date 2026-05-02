@@ -33,6 +33,12 @@ services:
       N8N_BASIC_AUTH_USER: admin
       N8N_BASIC_AUTH_PASSWORD: ${POSTGRES_PASSWORD}
       WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+      # Allow login over plain HTTP on the VPS (no TLS yet). Without these,
+      # n8n refuses to set its session cookie on http:// origins.
+      N8N_SECURE_COOKIE: "false"
+      N8N_HOST: 0.0.0.0
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
     ports:
       - "5678:5678"
     depends_on:
