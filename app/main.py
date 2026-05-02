@@ -248,9 +248,7 @@ async def startup() -> None:
         )
         await telethon_client.connect()
         telethon_ready = await telethon_client.is_user_authorized()
-        logger.debug(
-            "Telethon session check: path=%s authorized=%s", session_path, telethon_ready
-        )
+        logger.debug("Telethon session check: path=%s authorized=%s", session_path, telethon_ready)
 
         if not telethon_ready:
             logger.warning(
